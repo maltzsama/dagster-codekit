@@ -1,4 +1,3 @@
-
 # PROJECT METADATA
 [project]
 name = "dagster-codekit"
@@ -14,121 +13,55 @@ authors = [
 keywords = [
     "dagster",
     "data-orchestration",
-    "data-pipeline",
     "ci-cd",
-    "continuous-integration",
-    "continuous-deployment",
     "gitops",
     "argocd",
-    "github-actions",
-    "gitlab-ci",
-    "webhook",
+    "kubernetes",
     "automation",
-    "deployment",
-    "self-hosted",
-    "data-platform",
-    "data-engineering",
     "devops",
 ]
 
 classifiers = [
-    # Development Status
     "Development Status :: 3 - Alpha",
-    
-    # Environment
     "Environment :: Web Environment",
-    
-    # Audience
     "Intended Audience :: Developers",
-    "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",
-    
-    # License
     "License :: OSI Approved :: Apache Software License",
-    
-    # OS
     "Operating System :: OS Independent",
-    
-    # Python versions
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    
-    # Topics
     "Topic :: Software Development :: Build Tools",
     "Topic :: System :: Systems Administration",
-    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
 ]
-
 
 # DEPENDENCIES
 dependencies = [
-    # Core Dagster
-    "dagster>=1.10.0,<2.0.0",
-    "dagster-webserver>=1.10.0,<2.0.0",
-    # Web framework
-    "starlette>=0.52.1",
+    "dagster>=1.9.0",
+    "starlette>=0.35.0",
     "uvicorn[standard]>=0.27.0",
-    # CLI
-    "click>=8.0.0",
-    # Config & Validation
-    "pydantic>=2.0.0,<3.0.0",
-    "pyyaml>=6.0",
+    "click>=8.1.0",
+    "pydantic>=2.5.0",
+    "pyyaml>=6.0.1",
     "ruamel.yaml>=0.18.0",
-    # Logging
-    "structlog>=24.0.0",
-    # HTTP client
+    "structlog>=24.1.0",
     "httpx>=0.27.0",
-    # gRPC
     "grpcio>=1.60.0",
     "grpcio-health-checking>=1.60.0",
 ]
 
-
-# OPTIONAL DEPENDENCIES
+# OPTIONAL DEPENDENCIES (Extras)
 [project.optional-dependencies]
-# Kubernetes support
 kubernetes = [
-    "kubernetes>=28.0.0",
+    "kubernetes>=29.0.0",
 ]
-
-# Development & Testing
-dev = [
-    "pytest>=9.0.2",
-    "pytest-asyncio>=1.3.0",
-    "pytest-cov>=4.1.0",
-    "black>=26.1.0",
-    "ruff>=0.14.14",
-    "mypy>=1.8.0",
-]
-
-# Build & Release tools
-build = [
-    "twine>=4.0.0",
-    "build>=0.10.0",
-]
-
-# Install everything
-all = ["dagster-codekit[kubernetes,dev,build]"]
-
-
-# PROJECT URLS
-[project.urls]
-Homepage = "https://github.com/maltzsama/dagster-codekit"
-Repository = "https://github.com/maltzsama/dagster-codekit"
-Documentation = "https://dagster-codekit.readthedocs.io"
-Issues = "https://github.com/maltzsama/dagster-codekit/issues"
-Changelog = "https://github.com/maltzsama/dagster-codekit/blob/main/CHANGELOG.md"
-
 
 # CLI ENTRYPOINT
 [project.scripts]
-dagster-codekit = "dagster_codekit.cli:main"
+dagster-codekit = "dagster_codekit.cli:cli"
 
-
-# BUILD CONFIG (hatchling)
+# BUILD CONFIG
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -137,41 +70,29 @@ build-backend = "hatchling.build"
 packages = ["dagster_codekit"]
 
 
+# DEVELOPMENT CONFIGURATION
 
-
-# UV CONFIG
-[tool.uv]
-dev-dependencies = [
-    "pytest>=9.0.2",
-    "pytest-asyncio>=1.3.0",
+# UV DEPENDENCY GROUPS (Novo Padrão)
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
     "pytest-cov>=4.1.0",
-    "black>=26.1.0",
-    "ruff>=0.14.14",
+    "black>=24.0.0",
+    "ruff>=0.3.0",
     "mypy>=1.8.0",
+    "types-pyyaml>=6.0.12.12",
+    "types-requests>=2.31.0",
 ]
 
-[tool.uv.workspace]
-members = [
-    "dagster-codekit",
-]
+# PYTEST CONFIG
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "--strict-markers -v --cov=dagster_codekit --cov-report=term-missing"
+pythonpath = ["."]
 
-
-# CODE QUALITY TOOLS
-# Black formatter
-[tool.black]
-line-length = 100
-target-version = ['py310', 'py311', 'py312', 'py313']
-
-# Ruff linter
-[tool.ruff]
-line-length = 100
-target-version = "py310"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "B", "C4", "UP"]
-ignore = ["E501"]
-
-# MyPy type checker
+# MYPY CONFIG
 [tool.mypy]
 python_version = "3.10"
 warn_return_any = true
@@ -179,24 +100,32 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 ignore_missing_imports = true
 
-# Pytest
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-asyncio_mode = "auto"
-addopts = "--strict-markers -v --cov=dagster_codekit --cov-report=term-missing"
-pythonpath = ["."]
+# RUFF LINTER CONFIG
+[tool.ruff]
+line-length = 100
+target-version = "py310"
 
-# Coverage
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "B", "UP"]
+ignore = ["E501"]
+
+# BLACK FORMATTER CONFIG
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+# COVERAGE CONFIG
 [tool.coverage.run]
 source = ["dagster_codekit"]
-omit = ["*/tests/*", "*/test_*.py"]
+omit = ["tests/*"]
 
 [tool.coverage.report]
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
-    "raise AssertionError",
-    "raise NotImplementedError",
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "pass",
+    "\\.\\.\\.",
 ]
