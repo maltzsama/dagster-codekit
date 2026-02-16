@@ -38,7 +38,7 @@ classifiers = [
 
 # DEPENDENCIES
 dependencies = [
-    "dagster>=1.9.0",
+    "dagster>=1.10.0",
     "starlette>=0.35.0",
     "uvicorn[standard]>=0.27.0",
     "click>=8.1.0",
