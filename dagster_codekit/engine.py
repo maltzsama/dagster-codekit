@@ -11,6 +11,7 @@ import structlog
 from dagster_codekit.models import DeploymentEvent
 from dagster_codekit.utils.reloader import DagsterReloader
 from dagster_codekit.workspace.base import WorkspaceManager
+from structlog.contextvars import bind_contextvars
 
 logger = structlog.get_logger()
 
@@ -34,29 +35,29 @@ class DeploymentEngine:
         Failures here will bubble up to the server causing HTTP 500.
         """
         # 1. Create Contextual Logger
-        log = logger.bind(
+        bind_contextvars(
             location=event.location_name,
             grpc_host=event.grpc_host,
             commit=event.commit_hash or "unknown",
             deploy_type=event.deployment_type,
         )
 
-        log.info("deployment_started")
+        logger.info("deployment_started")
 
         # STEP 1: Build Config Object
         location_config = self._build_location_config(event)
 
         # STEP 2: Persist to Workspace (Atomic)
-        log.debug("updating_workspace_config")
+        logger.debug("updating_workspace_config")
         self.workspace_manager.add_or_update(event.location_name, location_config)
-        log.info("workspace_updated")
+        logger.info("workspace_updated")
 
         # STEP 3: Trigger Dagster Reload
-        log.debug("triggering_dagster_reload")
+        logger.debug("triggering_dagster_reload")
         await self.reloader.reload()
 
-        log.info("dagster_reloaded")
-        log.info("deployment_completed_successfully")
+        logger.info("dagster_reloaded")
+        logger.info("deployment_completed_successfully")
 
     def _build_location_config(self, event: DeploymentEvent) -> Dict[str, Any]:
         """

@@ -7,6 +7,16 @@ import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator, ValidationInfo
 
 
+class FileWorkspaceConfig(BaseModel):
+    path: str = Field(..., description="Caminho completo para o workspace.yaml")
+
+
+class K8sWorkspaceConfig(BaseModel):
+    namespace: str = Field(..., description="Namespace do ConfigMap")
+    name: str = Field(..., description="Nome do ConfigMap")
+    max_retries: int = Field(5, ge=1, le=20)
+
+
 class LocationConfig(BaseModel):
     name: str
     grpc_host: str
@@ -52,12 +62,12 @@ class RepositoryConfig(BaseModel):
 
 
 # --- BACKENDS ---
-
-
 class ArgoCDBackendConfig(BaseModel):
     enabled: bool = False
     webhook_secret: str
     grpc_timeout: int = Field(60, ge=10, le=300)
+    grpc_tls: bool = Field(False, description="Use gRPC Secure Channel for health check")
+    check_interval: Optional[float] = 2.0
 
     @field_validator("webhook_secret")
     @classmethod
@@ -123,8 +133,8 @@ class DagsterConfig(BaseModel):
 # --- WORKSPACE & SERVER ---
 class WorkspaceConfig(BaseModel):
     mode: Literal["file", "configmap"]
-    file: dict[str, Any] = Field(default_factory=dict)
-    configmap: dict[str, Any] = Field(default_factory=dict)
+    file: Optional[FileWorkspaceConfig] = None
+    configmap: Optional[K8sWorkspaceConfig] = None
 
     @model_validator(mode="after")
     def validate_mode_config(self):

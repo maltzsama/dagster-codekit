@@ -5,13 +5,18 @@ Receives webhooks from CI/CD tools and triggers the deployment engine.
 Uses Starlette for a lightweight, async-native implementation.
 """
 
+import uuid
+
 import structlog
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+from structlog.contextvars import bind_contextvars
+from structlog.contextvars import clear_contextvars
 
 from dagster_codekit.backends.argocd import ArgoCDBackend
 from dagster_codekit.config import Config
@@ -29,24 +34,48 @@ from dagster_codekit.workspace import FileWorkspaceManager, K8sWorkspaceManager
 logger = structlog.get_logger()
 
 
+class LoggingContextMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        clear_contextvars()
+        request_id = str(uuid.uuid4())
+
+        bind_contextvars(
+            request_id=request_id,
+            method=request.method,
+            path=request.url.path,
+            client_ip=request.client.host if request.client else "unknown",
+        )
+
+        try:
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = request_id
+            return response
+        except Exception as e:
+            logger.exception("unhandled_server_exception", error=str(e))
+            return JSONResponse(
+                {"error": "Internal Server Error", "request_id": request_id}, status_code=500
+            )
+        finally:
+            clear_contextvars()
+
+
 async def webhook_handler(request: Request) -> JSONResponse:
     """
     Handle incoming webhooks from CI/CD backends.
     Route: POST /webhooks/{backend}
     """
+    clear_contextvars()
+
     backend_name = request.path_params.get("backend")
 
-    # 1. Logger Context
-    log = logger.bind(
-        backend=backend_name,
-        client_ip=request.client.host if request.client else "unknown",
-        method=request.method,
+    bind_contextvars(
+        backend=backend_name, client_ip=request.client.host if request.client else "unknown"
     )
 
     # 2. Resolve Backend
     backends: dict[str, BackendPlugin] = request.app.state.backends
     if backend_name not in backends:
-        log.warning("webhook_unknown_backend")
+        logger.warning("webhook_unknown_backend")
         return JSONResponse(
             {"error": f"Backend '{backend_name}' not configured or disabled"}, status_code=404
         )
@@ -59,7 +88,7 @@ async def webhook_handler(request: Request) -> JSONResponse:
         try:
             backend.validate_signature(request)
         except AuthenticationError as e:
-            log.warning("webhook_signature_invalid", error=str(e))
+            logger.warning("webhook_signature_invalid", error=str(e))
             return JSONResponse({"error": "Invalid signature"}, status_code=401)
 
         # 4. Parse Payload
@@ -67,19 +96,19 @@ async def webhook_handler(request: Request) -> JSONResponse:
             payload = await request.json()
             event = await backend.parse_event(payload)
         except ValidationError as e:
-            log.warning("webhook_validation_failed", error=str(e))
+            logger.warning("webhook_validation_failed", error=str(e))
             return JSONResponse({"error": str(e)}, status_code=400)
         except Exception as e:
-            log.error("webhook_parse_error", error=str(e))
+            logger.error("webhook_parse_error", error=str(e))
             return JSONResponse({"error": "Invalid payload format"}, status_code=400)
 
         # 5. Filter Ignored Events
         if event is None:
-            log.debug("webhook_ignored", reason="Backend filtered event")
+            logger.debug("webhook_ignored", reason="Backend filtered event")
             return JSONResponse({"status": "ignored"}, status_code=200)
 
         # Update logger with event context
-        log = log.bind(location=event.location_name, grpc_host=event.grpc_host)
+        log = logger.bind(location=event.location_name, grpc_host=event.grpc_host)
         log.info("webhook_event_accepted")
 
         # 6. Wait for Deployment Readiness (Health Check)
@@ -123,19 +152,19 @@ def create_app(config: Config) -> Starlette:
 
     # A. Initialize Workspace Manager
     if config.workspace.mode == "file":
-        manager = FileWorkspaceManager(config.workspace.file.get("path"))
+        manager = FileWorkspaceManager(config.workspace.file.path)
     elif config.workspace.mode == "configmap":
         manager = K8sWorkspaceManager(
-            namespace=config.workspace.configmap.get("namespace"),
-            configmap_name=config.workspace.configmap.get("name"),
-            max_retries=config.workspace.configmap.get("max_retries", 5),
+            namespace=config.workspace.configmap.namespace,
+            name=config.workspace.configmap.name,
+            max_retries=config.workspace.configmap.max_retries,
         )
     else:
         raise ConfigurationError(f"Unknown workspace mode: {config.workspace.mode}")
 
     # B. Initialize Reloader
     reloader = DagsterReloader(
-        webserver_url=config.dagster.webserver_url, auth_config=config.dagster.auth.model_dump()
+        webserver_url=config.dagster.webserver_url, auth_config=config.dagster.auth
     )
 
     # C. Initialize Engine
@@ -145,7 +174,7 @@ def create_app(config: Config) -> Starlette:
     backends: dict[str, BackendPlugin] = {}
 
     if config.argocd:
-        backends["argocd"] = ArgoCDBackend(config.argocd.model_dump())
+        backends["argocd"] = ArgoCDBackend(config.argocd)
         logger.info("backend_enabled", name="argocd")
 
     if not backends:
@@ -158,7 +187,10 @@ def create_app(config: Config) -> Starlette:
             Route("/webhooks/{backend}", webhook_handler, methods=["POST"]),
             Route("/health", health_check, methods=["GET"]),
         ],
-        middleware=[Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"])],
+        middleware=[
+            Middleware(LoggingContextMiddleware),
+            Middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"]),
+        ],
     )
 
     # Store components in state for access in routes
