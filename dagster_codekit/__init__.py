@@ -6,7 +6,7 @@ Auto-reload Dagster code locations when deployments complete.
 
 from dagster_codekit.__version__ import __version__
 
-from dagster_codekit.exceptions import (
+from dagster_codekit.core.exceptions import (
     CodekitError,
     ConfigurationError,
     ValidationError,
@@ -14,7 +14,7 @@ from dagster_codekit.exceptions import (
     TimeoutError,
     ConnectionError,
 )
-from dagster_codekit.models import DeploymentEvent, ValidationResult
+from dagster_codekit.api.schemas import DeploymentEvent, ValidationResult
 
 __all__ = [
     "__version__",

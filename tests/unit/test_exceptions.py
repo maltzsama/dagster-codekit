@@ -1,7 +1,7 @@
 """Tests for custom exceptions."""
 
 import pytest
-from dagster_codekit.exceptions import (
+from dagster_codekit.core.exceptions import (
     CodekitError,
     ConfigurationError,
     ValidationError,

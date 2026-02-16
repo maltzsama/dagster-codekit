@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
-from dagster_codekit.engine import DeploymentEngine
-from dagster_codekit.models import DeploymentEvent
+from dagster_codekit.core.engine import DeploymentEngine
+from dagster_codekit import DeploymentEvent
 from dagster_codekit.workspace.base import WorkspaceManager
 from dagster_codekit.utils.reloader import DagsterReloader
 

@@ -2,7 +2,6 @@ import tempfile
 from pathlib import Path
 import pytest
 import yaml
-from dagster_codekit.exceptions import ConfigurationError
 from dagster_codekit.workspace.file import FileWorkspaceManager
 
 

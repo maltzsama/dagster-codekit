@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, Mock, patch
 from starlette.testclient import TestClient
-from dagster_codekit.server import create_app
+from dagster_codekit.api.app import create_app
 
 
 @pytest.fixture

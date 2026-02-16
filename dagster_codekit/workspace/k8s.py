@@ -13,7 +13,7 @@ from kubernetes.client.rest import ApiException
 from ruamel.yaml import YAML
 
 from dagster_codekit.workspace.base import WorkspaceManager
-from dagster_codekit.exceptions import ConfigurationError, ValidationError
+from dagster_codekit.core.exceptions import ConfigurationError, ValidationError
 
 logger = structlog.get_logger()
 

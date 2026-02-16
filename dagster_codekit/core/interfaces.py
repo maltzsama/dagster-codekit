@@ -7,7 +7,7 @@ from typing import Any, Optional
 
 from starlette.requests import Request
 
-from dagster_codekit.models import DeploymentEvent
+from dagster_codekit import DeploymentEvent
 
 
 class BackendPlugin(ABC):

@@ -12,7 +12,7 @@ from typing import Optional
 import structlog
 from ruamel.yaml import YAML
 
-from dagster_codekit.exceptions import ConfigurationError
+from dagster_codekit.core.exceptions import ConfigurationError
 
 logger = structlog.get_logger()
 

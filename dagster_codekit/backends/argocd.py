@@ -4,9 +4,9 @@ from typing import Any, Optional
 
 from starlette.requests import Request
 
-from dagster_codekit.interfaces import BackendPlugin
-from dagster_codekit.models import DeploymentEvent
-from dagster_codekit.exceptions import AuthenticationError, ValidationError, ConfigurationError
+from dagster_codekit.core.interfaces import BackendPlugin
+from dagster_codekit import DeploymentEvent
+from dagster_codekit.core.exceptions import AuthenticationError, ValidationError, ConfigurationError
 from dagster_codekit.utils.health import wait_for_grpc_server
 from dagster_codekit.config import ArgoCDBackendConfig
 

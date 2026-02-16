@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, Any
-from dagster_codekit.exceptions import ValidationError
+from dagster_codekit.core.exceptions import ValidationError
 
 
 class WorkspaceManager(ABC):

@@ -4,7 +4,7 @@ import grpc
 import structlog
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
-from dagster_codekit.exceptions import TimeoutError
+from dagster_codekit.core.exceptions import TimeoutError
 
 logger = structlog.get_logger()
 

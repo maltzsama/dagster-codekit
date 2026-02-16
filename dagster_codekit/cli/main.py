@@ -92,7 +92,7 @@ def start(config: str, host: str | None, port: int | None, log_level: str):
         click.echo(f"🔌 Enabled backends: {', '.join(enabled_backends)}")
 
     # 5. Run server
-    from dagster_codekit.server import run_server
+    from dagster_codekit.api.app import run_server
 
     try:
         asyncio.run(run_server(cfg))

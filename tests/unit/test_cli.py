@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock, AsyncMock  # <--- Importante: AsyncM
 from click.testing import CliRunner
 import pytest
 
-from dagster_codekit.cli import cli
+from dagster_codekit.cli import main
 
 
 def test_cli_version():
@@ -24,7 +24,7 @@ def test_cli_version():
 def test_cli_help():
     """Test help command."""
     runner = CliRunner()
-    result = runner.invoke(cli, ["--help"])
+    result = runner.invoke(main, ["--help"])
 
     assert result.exit_code == 0
     assert "dagster-codekit" in result.output
@@ -42,7 +42,7 @@ def test_cli_init():
 def test_cli_validate_missing_file():
     """Test validate command with missing file."""
     runner = CliRunner()
-    result = runner.invoke(cli, ["validate", "/nonexistent/config.yaml"])
+    result = runner.invoke(main, ["validate", "/nonexistent/config.yaml"])
     assert result.exit_code == 1
 
 
@@ -132,7 +132,7 @@ backends:
             with patch("dagster_codekit.server.run_server", new_callable=AsyncMock) as mock_run:
 
                 runner = CliRunner()
-                result = runner.invoke(cli, ["start", "--config", config_path])
+                result = runner.invoke(main, ["start", "--config", config_path])
 
                 assert result.exit_code == 0
                 assert "Starting dagster-codekit" in result.output

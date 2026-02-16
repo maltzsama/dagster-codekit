@@ -20,14 +20,14 @@ from structlog.contextvars import clear_contextvars
 
 from dagster_codekit.backends.argocd import ArgoCDBackend
 from dagster_codekit.config import Config
-from dagster_codekit.engine import DeploymentEngine
-from dagster_codekit.exceptions import (
+from dagster_codekit.core.engine import DeploymentEngine
+from dagster_codekit.core.exceptions import (
     AuthenticationError,
     ValidationError,
     ConfigurationError,
     TimeoutError,
 )
-from dagster_codekit.interfaces import BackendPlugin
+from dagster_codekit.core.interfaces import BackendPlugin
 from dagster_codekit.utils.reloader import DagsterReloader
 from dagster_codekit.workspace import FileWorkspaceManager, K8sWorkspaceManager
 from contextlib import asynccontextmanager

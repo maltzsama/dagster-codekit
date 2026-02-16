@@ -11,7 +11,7 @@ import httpx
 import structlog
 
 from dagster_codekit.config import AuthConfig
-from dagster_codekit.exceptions import (
+from dagster_codekit.core.exceptions import (
     AuthenticationError,
     ConfigurationError,
     ConnectionError,

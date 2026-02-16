@@ -1,7 +1,7 @@
 """Tests for core models."""
 
 import pytest
-from dagster_codekit.models import DeploymentEvent, ValidationResult
+from dagster_codekit import DeploymentEvent, ValidationResult
 
 
 def test_deployment_event_valid():

@@ -8,7 +8,7 @@ from typing import Any, Dict
 
 import structlog
 
-from dagster_codekit.models import DeploymentEvent
+from dagster_codekit import DeploymentEvent
 from dagster_codekit.utils.reloader import DagsterReloader
 from dagster_codekit.workspace.base import WorkspaceManager
 from structlog.contextvars import bind_contextvars
