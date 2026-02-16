@@ -146,6 +146,18 @@ class DagsterReloader:
             logger.error("reloader_unexpected_error", error=str(e), exc_info=True)
             raise e
 
+    async def check_connection(self) -> bool:
+        """
+        Check if Dagster Webserver is reachable.
+        """
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{self.webserver_url}/server_info")
+                return response.status_code == 200
+        except Exception as e:
+            logger.warning("reloader_connection_check_failed", error=str(e))
+            return False
+
     def _handle_http_errors(self, response: httpx.Response) -> None:
         """Process HTTP status codes and raise specific exceptions."""
         if response.status_code == 200:

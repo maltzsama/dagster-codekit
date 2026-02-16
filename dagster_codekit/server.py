@@ -30,6 +30,7 @@ from dagster_codekit.exceptions import (
 from dagster_codekit.interfaces import BackendPlugin
 from dagster_codekit.utils.reloader import DagsterReloader
 from dagster_codekit.workspace import FileWorkspaceManager, K8sWorkspaceManager
+from contextlib import asynccontextmanager
 
 logger = structlog.get_logger()
 
@@ -145,6 +146,39 @@ async def health_check(request: Request) -> JSONResponse:
     return JSONResponse({"status": "healthy", "backends": list(request.app.state.backends.keys())})
 
 
+@asynccontextmanager
+async def lifespan(app: Starlette):
+    """
+    Service startup and shutdown logic.
+    Runs pre-flight checks to ensure dependencies are alive.
+    """
+    config = app.state.config
+    engine = app.state.engine
+
+    logger.info("startup_checks_started")
+
+    # 1. Validate Workspace Access
+    try:
+        await engine.workspace_manager.validate()
+        logger.info("startup_check_workspace", status="ok")
+    except Exception as e:
+        logger.error("startup_check_workspace_failed", error=str(e))
+        # Hard fail: if we can't write to the workspace, the tool is useless
+        raise SystemExit(1)
+
+    # 2. Check Dagster Connectivity
+    is_dagster_up = await engine.reloader.check_connection()
+    if not is_dagster_up:
+        logger.warning(
+            "startup_check_dagster_failed",
+            help="Dagster Webserver is unreachable. Deploys will fail until it's back.",
+        )
+
+    logger.info("startup_checks_completed", status="ready")
+    yield
+    logger.info("server_shutting_down")
+
+
 def create_app(config: Config) -> Starlette:
     """Factory to create and configure the Starlette application."""
 
@@ -183,6 +217,7 @@ def create_app(config: Config) -> Starlette:
     # E. Create App & State
     app = Starlette(
         debug=False,
+        lifespan=lifespan,
         routes=[
             Route("/webhooks/{backend}", webhook_handler, methods=["POST"]),
             Route("/health", health_check, methods=["GET"]),

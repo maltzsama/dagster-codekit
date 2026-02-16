@@ -37,33 +37,33 @@ class FileWorkspaceManager:
         })
     """
 
-    def __init__(self, workspace_path: str):
+    def __init__(self, path: str):
         """
         Initialize file-based workspace manager.
 
         Args:
-            workspace_path: Path to workspace.yaml file
+            path: Path to workspace.yaml file
 
         Raises:
             ConfigurationError: If file doesn't exist or is invalid
         """
-        self.workspace_path = Path(workspace_path)
+        self.path = Path(path)
         self.yaml = YAML()
         self.yaml.preserve_quotes = True
         self.yaml.default_flow_style = False
 
         # Ensure file exists
-        if not self.workspace_path.exists():
+        if not self.path.exists():
             raise ConfigurationError(
-                f"Workspace file not found: {self.workspace_path}\n\n"
+                f"Workspace file not found: {self.path}\n\n"
                 f"Create it with:\n"
-                f"  echo 'load_from: []' > {self.workspace_path}\n"
+                f"  echo 'load_from: []' > {self.path}\n"
             )
 
         logger.info(
             "workspace_manager_initialized",
             mode="file",
-            path=str(self.workspace_path),
+            path=str(self.path),
         )
 
     def add_or_update(self, location_name: str, location_config: dict) -> None:
@@ -83,7 +83,7 @@ class FileWorkspaceManager:
         self._validate_location_config(location_config)
 
         # Open file with exclusive lock
-        with open(self.workspace_path, "r+") as f:
+        with open(self.path, "r+") as f:
             try:
                 # Acquire exclusive lock
                 fcntl.flock(f.fileno(), fcntl.LOCK_EX)
@@ -114,24 +114,44 @@ class FileWorkspaceManager:
                     workspace["load_from"].append(location_config)
 
                 # Write to temp file first (atomic write)
-                temp_path = self.workspace_path.with_suffix(".tmp")
+                temp_path = self.path.with_suffix(".tmp")
 
                 with open(temp_path, "w") as temp_f:
                     self.yaml.dump(workspace, temp_f)
 
                 # Atomic replace
-                os.replace(temp_path, self.workspace_path)
+                os.replace(temp_path, self.path)
 
                 logger.info(
                     "file_workspace_updated",
                     location=location_name,
                     total_locations=len(workspace["load_from"]),
-                    path=str(self.workspace_path),
+                    path=str(self.path),
                 )
 
             finally:
                 # Release lock
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+    # In FileWorkspaceManager
+    async def validate(self) -> None:
+        if not os.path.exists(self.path):
+            try:
+                # Try to create a default one if it doesn't exist
+                with open(self.path, "w") as f:
+                    f.write("load_from: []\n")
+                logger.info("workspace_file_created", path=self.path)
+            except Exception as e:
+                raise ConfigurationError(
+                    f"Workspace file not found and could not be created at {self.path}: {e}"
+                )
+
+        if not os.access(self.path, os.W_OK):
+            raise ConfigurationError(
+                f"Workspace file at {self.path} is not writable. Check permissions."
+            )
+
+        logger.info("workspace_validation_success", path=self.path)
 
     def _find_location_index(self, workspace: dict, location_name: str) -> Optional[int]:
         """

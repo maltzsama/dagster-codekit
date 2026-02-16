@@ -10,6 +10,11 @@ class WorkspaceManager(ABC):
     def add_or_update(self, location_name: str, location_config: dict[str, Any]) -> None:
         pass
 
+    @abstractmethod
+    async def validate(self) -> None:
+        """Check if workspace storage is accessible and writable."""
+        pass
+
     def _find_location_index(self, workspace: dict[str, Any], location_name: str) -> Optional[int]:
         for i, loc in enumerate(workspace.get("load_from", [])):
             loc_name = (

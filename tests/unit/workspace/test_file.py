@@ -21,7 +21,7 @@ def workspace_file():
 
 def test_file_manager_init(workspace_file):
     manager = FileWorkspaceManager(workspace_file)
-    assert manager.workspace_path == Path(workspace_file)
+    assert manager.path == Path(workspace_file)
 
 
 def test_file_manager_add_new_location(workspace_file):
