@@ -2,12 +2,13 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from dagster_codekit.backends.argocd import ArgoCDBackend
 from dagster_codekit.exceptions import AuthenticationError
+from dagster_codekit.config import ArgoCDBackendConfig
 
 
 @pytest.fixture
 def argocd_backend():
-    config = {"webhook_secret": "secret" * 5}  # > 20 chars
-    return ArgoCDBackend(config)
+    cfg = ArgoCDBackendConfig(enabled=True, webhook_secret="secret" * 5, grpc_timeout=60)
+    return ArgoCDBackend(config=cfg)
 
 
 def test_signature_validation(argocd_backend):
