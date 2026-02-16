@@ -156,7 +156,7 @@ def create_app(config: Config) -> Starlette:
     elif config.workspace.mode == "configmap":
         manager = K8sWorkspaceManager(
             namespace=config.workspace.configmap.namespace,
-            name=config.workspace.configmap.name,
+            configmap_name=config.workspace.configmap.name,
             max_retries=config.workspace.configmap.max_retries,
         )
     else:

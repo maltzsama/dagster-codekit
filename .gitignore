@@ -64,3 +64,5 @@ tmp/
 *.db
 uv.lock
 output.md
+playground/
+generate_docs.sh
