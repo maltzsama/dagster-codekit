@@ -42,6 +42,14 @@ from dagster_codekit.core.dagster_facade import (
     TimeWindowPartitionsSnap,
 )
 
+from dagster._core.snap.dep_snapshot import DependencyStructureIndex
+from dagster._core.snap.execution_plan_snapshot import (
+    ExecutionStepInputSnap,
+    ExecutionStepOutputSnap,
+)
+from dagster._core.snap.node import OpDefSnap
+from dagster._core.execution.plan.outputs import StepOutputHandle
+
 from dagster_codekit.db.models import CodeLocation, Snapshot, db_session
 from dagster_codekit.utils.metrics import runs_launched_total, grpc_requests_total
 
@@ -516,22 +524,55 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
         cancel_request = deserialize_value(
             request.serialized_cancel_execution_request, CancelExecutionRequest
         )
-        logger.info("cancel_execution_request", run_id=cancel_request.run_id)
-        return api_pb2.CancelExecutionReply(
-            serialized_cancel_execution_result=serialize_value(
-                CancelExecutionResult(
-                    success=False,
-                    message="Cancel not supported in serverless mode. "
-                            "Delete the Kubernetes Job directly.",
-                    serializable_error_info=None,
+        run_id = cancel_request.run_id
+        logger.info("cancel_execution_request", run_id=run_id)
+
+        try:
+            if self.launcher_mode == "docker":
+                self._cancel_docker_run(run_id)
+            else:
+                self._cancel_k8s_job(run_id)
+
+            return api_pb2.CancelExecutionReply(
+                serialized_cancel_execution_result=serialize_value(
+                    CancelExecutionResult(
+                        success=True,
+                        message=f"Run {run_id} cancelled",
+                        serializable_error_info=None,
+                    )
                 )
             )
-        )
+        except Exception as e:
+            logger.error("cancel_failed", run_id=run_id, error=str(e))
+            return api_pb2.CancelExecutionReply(
+                serialized_cancel_execution_result=serialize_value(
+                    CancelExecutionResult(
+                        success=False,
+                        message=str(e),
+                        serializable_error_info=SerializableErrorInfo(
+                            message=str(e), stack=[], cls_name="CodekitError"
+                        ),
+                    )
+                )
+            )
 
     def CanCancelExecution(self, request, context):
+        can_cancel_request = deserialize_value(
+            request.serialized_can_cancel_execution_request, CanCancelExecutionRequest
+        )
+        run_id = can_cancel_request.run_id
+
+        try:
+            if self.launcher_mode == "docker":
+                can_cancel = self._docker_container_exists(run_id)
+            else:
+                can_cancel = self._k8s_job_exists(run_id)
+        except Exception:
+            can_cancel = False
+
         return api_pb2.CanCancelExecutionReply(
             serialized_can_cancel_execution_result=serialize_value(
-                CanCancelExecutionResult(can_cancel=False)
+                CanCancelExecutionResult(can_cancel=can_cancel)
             )
         )
 
@@ -598,6 +639,7 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
         steps = []
         job_snap = job_data.job
         node_defs = job_snap.node_defs_snapshot
+        dep_index = DependencyStructureIndex(job_snap.dep_structure_snapshot)
 
         for op_snap in node_defs.op_def_snaps:
             node_name = op_snap.name
@@ -605,13 +647,42 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
             if args.op_selection and node_name not in args.op_selection:
                 continue
 
-            step_inputs = [
-                {"name": inp.name, "dagster_type_key": "Any", "source": None}
-                for inp in op_snap.input_def_snaps
-            ]
+            invocation = dep_index.get_invocation(node_name)
+
+            step_inputs = []
+            for inp in op_snap.input_def_snaps:
+                dep = next(
+                    (d for d in invocation.input_dep_snaps if d.input_name == inp.name),
+                    None,
+                )
+
+                if dep and dep.upstream_output_snaps:
+                    upstream_handles = [
+                        StepOutputHandle(
+                            step_key=u.node_name,
+                            output_name=u.output_name,
+                        )
+                        for u in dep.upstream_output_snaps
+                    ]
+                else:
+                    upstream_handles = []
+
+                step_inputs.append(
+                    ExecutionStepInputSnap(
+                        name=inp.name,
+                        dagster_type_key=inp.dagster_type_key,
+                        upstream_output_handles=upstream_handles,
+                        source=None,
+                    )
+                )
 
             step_outputs = [
-                {"name": out.name, "dagster_type_key": "Any"}
+                ExecutionStepOutputSnap(
+                    name=out.name,
+                    dagster_type_key=out.dagster_type_key,
+                    node_handle=None,
+                    properties={"is_dynamic": out.is_dynamic},
+                )
                 for out in op_snap.output_def_snaps
             ]
 
@@ -623,7 +694,7 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
                     solid_handle_id=node_name,
                     kind="COMPUTE",
                     metadata_items=[],
-                    tags={},
+                    tags=invocation.tags or {},
                 )
             )
 
@@ -645,9 +716,17 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
         if isinstance(partitions, StaticPartitionsSnap):
             return partitions.partition_keys
         if isinstance(partitions, TimeWindowPartitionsSnap):
-            return []
+            try:
+                pd = partitions.get_partitions_definition()
+                return pd.get_partition_keys()
+            except Exception:
+                return []
         if isinstance(partitions, MultiPartitionsSnap):
-            return []
+            try:
+                pd = partitions.get_partitions_definition()
+                return pd.get_partition_keys()
+            except Exception:
+                return []
         return getattr(partitions, "partition_keys", [])
 
     def _launch_k8s_job(self, run_id: str, image: str, execute_run_args: ExecuteExternalJobArgs):
@@ -825,6 +904,60 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
 
         thread = threading.Thread(target=_run, daemon=True, name=f"docker-run-{run_id}")
         thread.start()
+
+    def _cancel_k8s_job(self, run_id: str):
+        try:
+            from kubernetes import client, config as k8s_config
+        except ImportError:
+            raise Exception("kubernetes package is not installed")
+
+        try:
+            k8s_config.load_incluster_config()
+        except k8s_config.ConfigException:
+            k8s_config.load_kube_config()
+
+        batch_api = client.BatchV1Api()
+        job_name = f"dagster-run-{run_id}"
+        propagation_policy = "Foreground"
+
+        batch_api.delete_namespaced_job(
+            name=job_name,
+            namespace=self.k8s_namespace,
+            propagation_policy=propagation_policy,
+        )
+        logger.info("k8s_job_cancelled", job=job_name)
+
+    def _k8s_job_exists(self, run_id: str) -> bool:
+        try:
+            from kubernetes import client, config as k8s_config
+        except ImportError:
+            return False
+        try:
+            k8s_config.load_incluster_config()
+        except k8s_config.ConfigException:
+            k8s_config.load_kube_config()
+
+        batch_api = client.BatchV1Api()
+        job_name = f"dagster-run-{run_id}"
+        try:
+            batch_api.read_namespaced_job(name=job_name, namespace=self.k8s_namespace)
+            return True
+        except Exception:
+            return False
+
+    def _cancel_docker_run(self, run_id: str):
+        container_name = f"dagster-run-{run_id}"
+        subprocess.run(["docker", "stop", container_name], capture_output=True)
+        subprocess.run(["docker", "rm", container_name], capture_output=True)
+        logger.info("docker_run_cancelled", container=container_name)
+
+    def _docker_container_exists(self, run_id: str) -> bool:
+        container_name = f"dagster-run-{run_id}"
+        result = subprocess.run(
+            ["docker", "inspect", container_name],
+            capture_output=True,
+        )
+        return result.returncode == 0
 
 
 def run_grpc_server(host: str, port: int, db_conn: Any, max_workers: int = 10,

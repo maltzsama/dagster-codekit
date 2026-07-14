@@ -22,6 +22,8 @@ from dagster._core.remote_representation.external_data import (
 
 from dagster._core.snap.execution_plan_snapshot import (
     ExecutionPlanSnapshot,
+    ExecutionStepInputSnap,
+    ExecutionStepOutputSnap,
     ExecutionStepSnap,
 )
 
@@ -53,6 +55,8 @@ from dagster._serdes import deserialize_value, serialize_value
 
 from dagster._utils.error import SerializableErrorInfo
 
+from dagster._core.execution.plan.outputs import StepOutputHandle
+
 __all__ = [
     "Definitions",
     "RemoteRepositoryOrigin",
@@ -65,6 +69,7 @@ __all__ = [
     "RepositorySnap",
     "StaticPartitionsSnap",
     "TimeWindowPartitionsSnap",
+    "StepOutputHandle",
     "ExecutionPlanSnapshot",
     "ExecutionStepSnap",
     "api_pb2",
