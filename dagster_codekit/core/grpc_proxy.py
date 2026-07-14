@@ -46,9 +46,10 @@ from dagster._core.snap.dep_snapshot import DependencyStructureIndex
 from dagster._core.snap.execution_plan_snapshot import (
     ExecutionStepInputSnap,
     ExecutionStepOutputSnap,
+    StepKind,
 )
 from dagster._core.snap.node import OpDefSnap
-from dagster._core.execution.plan.outputs import StepOutputHandle
+from dagster._core.execution.plan.outputs import StepOutputHandle, StepOutputProperties
 
 _TICK_WORKER_SCRIPT = r"""
 import importlib.util, os, sys, traceback
@@ -811,7 +812,16 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
                     name=out.name,
                     dagster_type_key=out.dagster_type_key,
                     node_handle=None,
-                    properties={"is_dynamic": out.is_dynamic},
+                    properties=StepOutputProperties(
+                        is_required=out.is_required if hasattr(out, "is_required") else True,
+                        is_dynamic=out.is_dynamic if hasattr(out, "is_dynamic") else False,
+                        is_asset=False,
+                        should_materialize_DEPRECATED=False,
+                        asset_key=None,
+                        is_asset_partitioned=False,
+                        asset_check_key=None,
+                        asset_execution_type=None,
+                    ),
                 )
                 for out in op_snap.output_def_snaps
             ]
@@ -821,17 +831,24 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
                     key=node_name,
                     inputs=step_inputs,
                     outputs=step_outputs,
-                    solid_handle_id=node_name,
-                    kind="COMPUTE",
+                    node_handle_id=node_name,
+                    kind=StepKind.COMPUTE,
                     metadata_items=[],
                     tags=invocation.tags or {},
+                    step_handle=None,
+                    pool=None,
                 )
             )
 
         return ExecutionPlanSnapshot(
             steps=steps,
             artifacts_persisted=True,
-            pipeline_snapshot_id=job_snap.name,
+            job_snapshot_id=job_snap.name,
+            step_keys_to_execute=[],
+            initial_known_state=None,
+            snapshot_version=1,
+            executor_name="",
+            repository_load_data=None,
         )
 
     def _find_partition_set(self, repo_snap: RepositorySnap, partition_set_name: str, job_name: str):
