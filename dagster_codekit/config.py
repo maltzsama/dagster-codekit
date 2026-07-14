@@ -75,8 +75,30 @@ class ArgoCDBackendConfig(BaseModel):
     check_interval: float = Field(1.0, description="Interval between gRPC health check retries")
 
 
+class ForgejoBackendConfig(BaseModel):
+    enabled: bool = False
+    webhook_secret: str = Field("", description="Forgejo webhook HMAC-SHA256 secret")
+    payload_mode: Literal["custom", "native"] = Field(
+        "custom", description="Payload format: 'custom' (Actions step) or 'native' (webhook)"
+    )
+    grpc_timeout: int = Field(30, description="Seconds to wait for gRPC health check")
+    grpc_tls: bool = Field(False, description="Use TLS for gRPC connection")
+    check_interval: float = Field(1.0, description="Interval between gRPC health check retries")
+
+
+class AzureDevOpsBackendConfig(BaseModel):
+    enabled: bool = False
+    webhook_secret: str = Field("", description="Static token for header-based auth")
+    header_name: str = Field("X-Codekit-Webhook-Token", description="Header name for token check")
+    grpc_timeout: int = Field(30, description="Seconds to wait for gRPC health check")
+    grpc_tls: bool = Field(False, description="Use TLS for gRPC connection")
+    check_interval: float = Field(1.0, description="Interval between gRPC health check retries")
+
+
 class BackendsConfig(BaseModel):
     argocd: ArgoCDBackendConfig = Field(default_factory=ArgoCDBackendConfig)
+    forgejo: ForgejoBackendConfig = Field(default_factory=ForgejoBackendConfig)
+    azure_devops: AzureDevOpsBackendConfig = Field(default_factory=AzureDevOpsBackendConfig)
 
 
 class AuthConfig(BaseModel):

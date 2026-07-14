@@ -234,6 +234,20 @@ backends:
     grpc_timeout: 30
     grpc_tls: false
     check_interval: 1.0
+  forgejo:
+    enabled: false
+    webhook_secret: ""
+    payload_mode: custom
+    grpc_timeout: 30
+    grpc_tls: false
+    check_interval: 1.0
+  azure_devops:
+    enabled: false
+    webhook_secret: ""
+    header_name: X-Codekit-Webhook-Token
+    grpc_timeout: 30
+    grpc_tls: false
+    check_interval: 1.0
 
 auth:
   enabled: false
