@@ -663,6 +663,27 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
 
         batch_api = client.BatchV1Api()
 
+        location_name = execute_run_args.job_origin.repository_origin.code_location_origin.location_name
+
+        with db_session():
+            location = CodeLocation.get_or_none(CodeLocation.name == location_name)
+            overrides = location.get_k8s_overrides() if location else {}
+
+        service_account = overrides.get("service_account", self.k8s_service_account)
+        image_pull_policy = overrides.get("image_pull_policy", self.k8s_image_pull_policy)
+        ttl_seconds = overrides.get("ttl_seconds_after_finished", self.k8s_ttl_seconds)
+        k8s_namespace = overrides.get("namespace", self.k8s_namespace)
+
+        resources = overrides.get("resources", {})
+        resource_requests = resources.get("requests", {"cpu": "250m", "memory": "512Mi"})
+        resource_limits = resources.get("limits", {"cpu": "1000m", "memory": "2Gi"})
+
+        extra_labels = overrides.get("labels", {})
+        extra_annotations = overrides.get("annotations", {})
+        extra_env = overrides.get("env", {})
+        image_pull_secrets = overrides.get("image_pull_secrets", [])
+        node_selector = overrides.get("node_selector", {})
+
         run_args = ExecuteRunArgs(
             job_origin=execute_run_args.job_origin,
             run_id=run_id,
@@ -673,7 +694,10 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
 
         env = [
             client.V1EnvVar(name="DAGSTER_EXECUTE_RUN_ARGS", value=serialized_run_args),
-            client.V1EnvVar(name="DAGSTER_HOME", value=os.getenv("DAGSTER_HOME", "/opt/dagster/dagster_home")),
+            client.V1EnvVar(
+                name="DAGSTER_HOME",
+                value=os.getenv("DAGSTER_HOME", "/opt/dagster/dagster_home"),
+            ),
         ]
 
         for var_name in self.forward_env_vars:
@@ -681,53 +705,70 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
             if val:
                 env.append(client.V1EnvVar(name=var_name, value=val))
 
+        for key, val in extra_env.items():
+            env.append(client.V1EnvVar(name=key, value=str(val)))
+
         job_name = f"dagster-run-{run_id}"
 
-        job_manifest = client.V1Job(
-            metadata=client.V1ObjectMeta(
-                name=job_name,
-                labels={
-                    "dagster/run-id": run_id,
-                    "app.kubernetes.io/name": "dagster-codekit-worker",
-                    "app.kubernetes.io/component": "run-worker",
-                },
+        labels = {
+            "dagster/run-id": run_id,
+            "app.kubernetes.io/name": "dagster-codekit-worker",
+            "app.kubernetes.io/component": "run-worker",
+            **extra_labels,
+        }
+
+        annotations = {
+            "cluster-autoscaler.kubernetes.io/safe-to-evict": "false",
+            **extra_annotations,
+        }
+
+        pull_secrets = None
+        if image_pull_secrets:
+            pull_secrets = [
+                client.V1LocalObjectReference(name=s["name"])
+                for s in image_pull_secrets
+            ]
+
+        container = client.V1Container(
+            name="dagster-run-worker",
+            image=image,
+            image_pull_policy=image_pull_policy,
+            command=["dagster", "api", "execute_run"],
+            env=env,
+            resources=client.V1ResourceRequirements(
+                requests=resource_requests,
+                limits=resource_limits,
             ),
+        )
+
+        pod_spec = client.V1PodSpec(
+            service_account_name=service_account,
+            restart_policy="Never",
+            containers=[container],
+            image_pull_secrets=pull_secrets,
+        )
+
+        if node_selector:
+            pod_spec.node_selector = node_selector
+
+        job_manifest = client.V1Job(
+            metadata=client.V1ObjectMeta(name=job_name, labels=labels),
             spec=client.V1JobSpec(
-                ttl_seconds_after_finished=self.k8s_ttl_seconds,
+                ttl_seconds_after_finished=ttl_seconds,
                 backoff_limit=0,
                 template=client.V1PodTemplateSpec(
                     metadata=client.V1ObjectMeta(
                         labels={"dagster/run-id": run_id},
-                        annotations={
-                            "cluster-autoscaler.kubernetes.io/safe-to-evict": "false"
-                        },
+                        annotations=annotations,
                     ),
-                    spec=client.V1PodSpec(
-                        service_account_name=self.k8s_service_account,
-                        restart_policy="Never",
-                        containers=[
-                            client.V1Container(
-                                name="dagster-run-worker",
-                                image=image,
-                                image_pull_policy=self.k8s_image_pull_policy,
-                                command=["dagster", "api", "execute_run"],
-                                env=env,
-                                resources=client.V1ResourceRequirements(
-                                    requests={"cpu": "250m", "memory": "512Mi"},
-                                    limits={"cpu": "1000m", "memory": "2Gi"},
-                                ),
-                            )
-                        ],
-                    ),
+                    spec=pod_spec,
                 ),
             ),
         )
 
         try:
-            batch_api.create_namespaced_job(
-                namespace=self.k8s_namespace, body=job_manifest
-            )
-            logger.info("k8s_job_created", job=job_name)
+            batch_api.create_namespaced_job(namespace=k8s_namespace, body=job_manifest)
+            logger.info("k8s_job_created", job=job_name, location=location_name)
         except client.ApiException as e:
             logger.error("k8s_api_error", status=e.status, reason=e.reason)
             raise Exception(f"Failed to create K8s Job: {e.reason}")

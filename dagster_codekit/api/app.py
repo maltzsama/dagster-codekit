@@ -87,7 +87,11 @@ async def receive_deployment(event: DeploymentEvent, background_tasks: Backgroun
 
             if location.image != event.image_tag:
                 location.image = event.image_tag
-                location.save()
+
+            if event.k8s_config:
+                location.set_k8s_overrides(event.k8s_config)
+
+            location.save()
 
             Snapshot.create(
                 location=location,

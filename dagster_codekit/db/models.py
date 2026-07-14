@@ -1,3 +1,5 @@
+import json
+
 import datetime
 from contextlib import contextmanager
 from urllib.parse import urlparse
@@ -28,8 +30,20 @@ class CodeLocation(BaseModel):
     description = TextField(null=True)
     image = CharField(help_text="Imagem Docker padrão/atual")
     namespace = CharField(default="dagster")
+    k8s_config = TextField(null=True, help_text="JSON with per-location K8s overrides")
     created_at = DateTimeField(default=datetime.datetime.utcnow)
     updated_at = DateTimeField(default=datetime.datetime.utcnow)
+
+    def get_k8s_overrides(self) -> dict:
+        if self.k8s_config:
+            try:
+                return json.loads(self.k8s_config)
+            except (json.JSONDecodeError, TypeError):
+                return {}
+        return {}
+
+    def set_k8s_overrides(self, overrides: dict) -> None:
+        self.k8s_config = json.dumps(overrides) if overrides else None
 
 
 class Snapshot(BaseModel):
