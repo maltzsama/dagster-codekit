@@ -136,3 +136,16 @@ exclude_lines = [
     "pass",
     "\\.\\.\\.",
 ]
+
+# SEMANTIC-RELEASE CONFIG
+[tool.semantic_release]
+version_variables = ["dagster_codekit/__version__.py:__version__"]
+version_toml = ["pyproject.toml:project.version"]
+branch = "main"
+changelog_file = "CHANGELOG.md"
+build_command = "uv build"
+
+[tool.semantic_release.branches]
+main = { match = "main", prerelease = false }
+develop = { match = "develop", prerelease = true }
+release = { match = "release/*", prerelease = false }
