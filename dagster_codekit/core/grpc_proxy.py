@@ -50,6 +50,40 @@ from dagster._core.snap.execution_plan_snapshot import (
 from dagster._core.snap.node import OpDefSnap
 from dagster._core.execution.plan.outputs import StepOutputHandle
 
+_TICK_WORKER_SCRIPT = r"""
+import importlib.util, os, sys, traceback
+from dagster import Definitions
+from dagster._grpc.types import ExternalScheduleExecutionArgs, SensorExecutionArgs
+from dagster._serdes import deserialize_value, serialize_value
+from dagster._core.host_representation.external_data import ExternalScheduleExecutionData, ExternalSensorExecutionData
+
+def _load_defs(fp):
+    if not os.path.exists(fp): raise FileNotFoundError(fp)
+    s = importlib.util.spec_from_file_location("uc", fp)
+    m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
+    d = next(v for v in vars(m).values() if isinstance(v, Definitions)); return d
+
+def main():
+    aj = os.environ.get("DAGSTER_TICK_ARGS",""); tt = os.environ.get("DAGSTER_TICK_TYPE","")
+    fp = os.environ.get("DAGSTER_TICK_FILE","")
+    try:
+        d = _load_defs(fp); r = d.get_repository_def()
+        if tt == "schedule":
+            a = deserialize_value(aj, ExternalScheduleExecutionArgs)
+            sd = next(s for s in r.schedule_defs if s.name == a.schedule_name)
+            v = sd.evaluate_tick(scheduled_execution_time=a.scheduled_execution_timestamp, scheduled_execution_timezone=a.scheduled_execution_timezone)
+            print(serialize_value(ExternalScheduleExecutionData.from_schedule_data(v)), flush=True)
+        elif tt == "sensor":
+            a = deserialize_value(aj, SensorExecutionArgs)
+            sn = next(s for s in r.sensor_defs if s.name == a.sensor_name)
+            v = sn.evaluate_tick(cursor=a.cursor, last_completion_time=a.last_completion_time, last_run_key=a.last_run_key, last_tick_completion_time=a.last_tick_completion_time, last_sensor_start_time=a.last_sensor_start_time)
+            print(serialize_value(ExternalSensorExecutionData.from_sensor_data(v)), flush=True)
+    except Exception:
+        print(serialize_value({"__class__":"SerializableErrorInfo","message":traceback.format_exc(),"stack":[],"cls_name":"TickEvaluationError"}), flush=True)
+
+if __name__ == "__main__": main()
+""".strip()
+
 from dagster_codekit.db.models import CodeLocation, Snapshot, db_session
 from dagster_codekit.utils.metrics import runs_launched_total, grpc_requests_total
 
@@ -380,48 +414,138 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
     # =========================================================================
 
     def ExternalScheduleExecution(self, request, context):
-        error_info = SerializableErrorInfo(
-            message="Schedule execution is not supported in serverless mode. "
-                    "Schedules should be evaluated by the Dagster instance directly.",
-            stack=[],
-            cls_name="CodekitError",
-        )
-        serialized = serialize_value(error_info)
-        yield from _chunked_stream(
-            serialized, api_pb2.StreamingChunkEvent, "serialized_chunk"
-        )
+        from dagster._grpc.types import ExternalScheduleExecutionArgs
+
+        try:
+            args = deserialize_value(
+                request.serialized_external_schedule_execution_args,
+                ExternalScheduleExecutionArgs,
+            )
+            location_name = self._extract_location_name_from_origin(args.repository_origin)
+            code_file = self._extract_code_file_path(args.repository_origin)
+            logger.info("schedule_tick", location=location_name, schedule=args.schedule_name)
+
+            snapshot = self._get_latest_snapshot(location_name)
+            if not snapshot:
+                raise Exception(f"Location '{location_name}' not found")
+
+            serialized = self._run_tick_worker(
+                run_id=f"schedule-{args.schedule_name}",
+                image=snapshot.image_tag,
+                tick_type="schedule",
+                tick_args=serialize_value(args),
+                code_file=code_file,
+            )
+            yield from _chunked_stream(
+                serialized, api_pb2.StreamingChunkEvent, "serialized_chunk"
+            )
+
+        except Exception as e:
+            logger.error("schedule_tick_error", error=str(e))
+            error_info = SerializableErrorInfo(message=str(e), stack=[], cls_name="CodekitError")
+            yield from _chunked_stream(
+                serialize_value(error_info), api_pb2.StreamingChunkEvent, "serialized_chunk"
+            )
 
     def SyncExternalScheduleExecution(self, request, context):
-        error_info = SerializableErrorInfo(
-            message="Schedule execution is not supported in serverless mode.",
-            stack=[],
-            cls_name="CodekitError",
-        )
-        return api_pb2.ExternalScheduleExecutionReply(
-            serialized_schedule_result=serialize_value(error_info)
-        )
+        from dagster._grpc.types import ExternalScheduleExecutionArgs
+
+        try:
+            args = deserialize_value(
+                request.serialized_external_schedule_execution_args,
+                ExternalScheduleExecutionArgs,
+            )
+            location_name = self._extract_location_name_from_origin(args.repository_origin)
+            code_file = self._extract_code_file_path(args.repository_origin)
+            logger.info("schedule_tick_sync", location=location_name, schedule=args.schedule_name)
+
+            snapshot = self._get_latest_snapshot(location_name)
+            if not snapshot:
+                raise Exception(f"Location '{location_name}' not found")
+
+            result = self._run_tick_worker(
+                run_id=f"schedule-sync-{args.schedule_name}",
+                image=snapshot.image_tag,
+                tick_type="schedule",
+                tick_args=serialize_value(args),
+                code_file=code_file,
+            )
+            return api_pb2.ExternalScheduleExecutionReply(
+                serialized_schedule_result=result
+            )
+
+        except Exception as e:
+            logger.error("schedule_tick_sync_error", error=str(e))
+            error_info = SerializableErrorInfo(message=str(e), stack=[], cls_name="CodekitError")
+            return api_pb2.ExternalScheduleExecutionReply(
+                serialized_schedule_result=serialize_value(error_info)
+            )
 
     def ExternalSensorExecution(self, request, context):
-        error_info = SerializableErrorInfo(
-            message="Sensor execution is not supported in serverless mode. "
-                    "Sensors should be evaluated by the Dagster instance directly.",
-            stack=[],
-            cls_name="CodekitError",
-        )
-        serialized = serialize_value(error_info)
-        yield from _chunked_stream(
-            serialized, api_pb2.StreamingChunkEvent, "serialized_chunk"
-        )
+        from dagster._grpc.types import SensorExecutionArgs
+
+        try:
+            args = deserialize_value(
+                request.serialized_external_sensor_execution_args, SensorExecutionArgs
+            )
+            location_name = self._extract_location_name_from_origin(args.repository_origin)
+            code_file = self._extract_code_file_path(args.repository_origin)
+            logger.info("sensor_tick", location=location_name, sensor=args.sensor_name)
+
+            snapshot = self._get_latest_snapshot(location_name)
+            if not snapshot:
+                raise Exception(f"Location '{location_name}' not found")
+
+            serialized = self._run_tick_worker(
+                run_id=f"sensor-{args.sensor_name}",
+                image=snapshot.image_tag,
+                tick_type="sensor",
+                tick_args=serialize_value(args),
+                code_file=code_file,
+            )
+            yield from _chunked_stream(
+                serialized, api_pb2.StreamingChunkEvent, "serialized_chunk"
+            )
+
+        except Exception as e:
+            logger.error("sensor_tick_error", error=str(e))
+            error_info = SerializableErrorInfo(message=str(e), stack=[], cls_name="CodekitError")
+            yield from _chunked_stream(
+                serialize_value(error_info), api_pb2.StreamingChunkEvent, "serialized_chunk"
+            )
 
     def SyncExternalSensorExecution(self, request, context):
-        error_info = SerializableErrorInfo(
-            message="Sensor execution is not supported in serverless mode.",
-            stack=[],
-            cls_name="CodekitError",
-        )
-        return api_pb2.ExternalSensorExecutionReply(
-            serialized_sensor_result=serialize_value(error_info)
-        )
+        from dagster._grpc.types import SensorExecutionArgs
+
+        try:
+            args = deserialize_value(
+                request.serialized_external_sensor_execution_args, SensorExecutionArgs
+            )
+            location_name = self._extract_location_name_from_origin(args.repository_origin)
+            code_file = self._extract_code_file_path(args.repository_origin)
+            logger.info("sensor_tick_sync", location=location_name, sensor=args.sensor_name)
+
+            snapshot = self._get_latest_snapshot(location_name)
+            if not snapshot:
+                raise Exception(f"Location '{location_name}' not found")
+
+            result = self._run_tick_worker(
+                run_id=f"sensor-sync-{args.sensor_name}",
+                image=snapshot.image_tag,
+                tick_type="sensor",
+                tick_args=serialize_value(args),
+                code_file=code_file,
+            )
+            return api_pb2.ExternalSensorExecutionReply(
+                serialized_sensor_result=result
+            )
+
+        except Exception as e:
+            logger.error("sensor_tick_sync_error", error=str(e))
+            error_info = SerializableErrorInfo(message=str(e), stack=[], cls_name="CodekitError")
+            return api_pb2.ExternalSensorExecutionReply(
+                serialized_sensor_result=serialize_value(error_info)
+            )
 
     # =========================================================================
     # EXECUTION PLANNING
@@ -627,6 +751,12 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
 
     def _extract_location_name_from_origin(self, origin: Any) -> str:
         return origin.code_location_origin.location_name
+
+    def _extract_code_file_path(self, origin: Any) -> str:
+        code_pointer = origin.code_location_origin.code_pointer
+        if hasattr(code_pointer, "python_file"):
+            return code_pointer.python_file
+        return ""
 
     def _error_reply(self, context, message: str, reply_cls):
         context.set_details(message)
@@ -958,6 +1088,107 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
             capture_output=True,
         )
         return result.returncode == 0
+
+    def _split_serialized_data_into_chunk_events(self, serialized_data: str):
+        yield from _chunked_stream(
+            serialized_data, api_pb2.StreamingChunkEvent, "serialized_chunk"
+        )
+
+    def _run_tick_worker(self, run_id: str, image: str, tick_type: str,
+                         tick_args: str, code_file: str) -> str:
+        if self.launcher_mode == "docker":
+            script_path = os.path.join(
+                os.path.dirname(__file__), "..", "tick_worker.py"
+            )
+            script_path = os.path.abspath(script_path)
+            cmd = [
+                "docker", "run",
+                "--name", f"dagster-tick-{run_id}",
+                "--network", self.docker_network,
+                "-v", f"{script_path}:/codekit/tick_worker.py:ro",
+                "-e", f"DAGSTER_TICK_ARGS={tick_args}",
+                "-e", f"DAGSTER_TICK_TYPE={tick_type}",
+                "-e", f"DAGSTER_TICK_FILE={code_file}",
+            ]
+            if self.docker_auto_remove:
+                cmd.insert(2, "--rm")
+            cmd.append(image)
+            cmd.extend(["python", "/codekit/tick_worker.py"])
+
+            logger.info("docker_tick_worker_launching", run_id=run_id, type=tick_type)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            if result.returncode != 0:
+                raise Exception(f"Tick worker failed: {result.stderr}")
+            return result.stdout.strip() or "{}"
+
+        else:
+            try:
+                from kubernetes import client, config as k8s_config
+            except ImportError:
+                raise Exception("kubernetes package is not installed")
+
+            try:
+                k8s_config.load_incluster_config()
+            except k8s_config.ConfigException:
+                k8s_config.load_kube_config()
+
+            batch_api = client.BatchV1Api()
+            job_name = f"dagster-tick-{run_id}"
+
+            env = [
+                client.V1EnvVar(name="DAGSTER_TICK_ARGS", value=tick_args),
+                client.V1EnvVar(name="DAGSTER_TICK_TYPE", value=tick_type),
+                client.V1EnvVar(name="DAGSTER_TICK_FILE", value=code_file),
+            ]
+
+            container = client.V1Container(
+                name="tick-worker",
+                image=image,
+                image_pull_policy=self.k8s_image_pull_policy,
+                command=["python", "-c", _TICK_WORKER_SCRIPT],
+                env=env,
+                resources=client.V1ResourceRequirements(
+                    requests={"cpu": "250m", "memory": "256Mi"},
+                    limits={"cpu": "500m", "memory": "512Mi"},
+                ),
+            )
+
+            pod_spec = client.V1PodSpec(
+                service_account_name=self.k8s_service_account,
+                restart_policy="Never",
+                containers=[container],
+            )
+
+            job_manifest = client.V1Job(
+                metadata=client.V1ObjectMeta(
+                    name=job_name,
+                    labels={
+                        "app.kubernetes.io/name": "dagster-codekit-tick-worker",
+                        "app.kubernetes.io/component": "tick-evaluator",
+                    },
+                ),
+                spec=client.V1JobSpec(
+                    ttl_seconds_after_finished=60,
+                    backoff_limit=0,
+                    template=client.V1PodTemplateSpec(
+                        metadata=client.V1ObjectMeta(labels={}),
+                        spec=pod_spec,
+                    ),
+                ),
+            )
+
+            batch_api.create_namespaced_job(
+                namespace=self.k8s_namespace, body=job_manifest
+            )
+            logger.info("k8s_tick_worker_created", job=job_name, type=tick_type)
+
+            return serialize_value({
+                "__class__": "SerializableErrorInfo",
+                "message": f"Tick worker launched as K8s Job '{job_name}'. "
+                           "K8s worker results are not synchronously captured.",
+                "stack": [],
+                "cls_name": "CodekitInfo",
+            })
 
 
 def run_grpc_server(host: str, port: int, db_conn: Any, max_workers: int = 10,
