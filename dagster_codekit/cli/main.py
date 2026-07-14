@@ -112,32 +112,62 @@ def snapshot(location: str, file: str, image: str, url: str, token: str | None):
 # COMMAND: init
 @cli.command()
 def init():
-    """Generate a modern, snapshot-ready config.yaml."""
-    example = """# dagster-codekit modern configuration
+    """Generate a snapshot-ready config.yaml."""
+    example = """# dagster-codekit configuration
 server:
   host: 0.0.0.0
   port: 8000
+  grpc_port: 4000
+  workers: 4
 
-# Persistence for snapshots and RBAC
 database:
   url: "sqlite:///./codekit.db"
+  pool_size: 5
+  max_overflow: 10
 
-# Universal gRPC Proxy (The one Dagster Webserver talks to)
-proxy:
-  host: 0.0.0.0
-  port: 4000
-
-dagster:
-  webserver_url: http://localhost:3000
+launcher:
+  enabled: true
+  mode: k8s
+  k8s:
+    namespace: dagster
+    service_account: dagster
+    image_pull_policy: Always
+    ttl_seconds_after_finished: 300
+    forward_env_vars:
+      - DAGSTER_POSTGRES_USER
+      - DAGSTER_POSTGRES_PASSWORD
+      - DAGSTER_POSTGRES_DB
+      - DAGSTER_POSTGRES_HOSTNAME
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+  docker:
+    network: host
+    auto_remove: true
+    forward_env_vars:
+      - DAGSTER_POSTGRES_USER
+      - DAGSTER_POSTGRES_PASSWORD
+      - DAGSTER_POSTGRES_DB
+      - DAGSTER_POSTGRES_HOSTNAME
 
 backends:
   argocd:
-    enabled: true
+    enabled: false
     webhook_secret: "generate-a-long-secret-here"
+    grpc_timeout: 30
+    grpc_tls: false
+    check_interval: 1.0
+
+auth:
+  enabled: false
+  tokens: []
+
+logging:
+  level: INFO
+  format: console
 """
     with open("config.yaml", "w") as f:
         f.write(example)
-    click.echo("✅ Created config.yaml with database and proxy settings.")
+    click.echo("Created config.yaml with default settings.")
 
 
 def main():
