@@ -1,7 +1,7 @@
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Literal, Optional
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -29,7 +29,7 @@ class K8sConfig(BaseModel):
     ttl_seconds_after_finished: int = Field(
         300, description="Auto-cleanup jobs after N seconds"
     )
-    forward_env_vars: List[str] = Field(
+    forward_env_vars: list[str] = Field(
         default=[
             "DAGSTER_POSTGRES_USER",
             "DAGSTER_POSTGRES_PASSWORD",
@@ -47,7 +47,7 @@ class K8sConfig(BaseModel):
 class DockerConfig(BaseModel):
     network: str = Field("host", description="Docker network mode")
     auto_remove: bool = Field(True, description="Remove container after exit")
-    forward_env_vars: List[str] = Field(
+    forward_env_vars: list[str] = Field(
         default=[
             "DAGSTER_POSTGRES_USER",
             "DAGSTER_POSTGRES_PASSWORD",
@@ -81,7 +81,7 @@ class BackendsConfig(BaseModel):
 
 class AuthConfig(BaseModel):
     enabled: bool = False
-    tokens: List[str] = Field(default_factory=list, description="List of valid Bearer tokens")
+    tokens: list[str] = Field(default_factory=list, description="List of valid Bearer tokens")
 
     @field_validator("tokens")
     @classmethod
@@ -112,7 +112,7 @@ def load_config(path: str | Path = "config.yaml") -> Config:
         return Config()
 
     try:
-        with open(path_obj, "r") as f:
+        with open(path_obj) as f:
             raw_content = f.read()
             expanded_content = os.path.expandvars(raw_content)
             data = yaml.safe_load(expanded_content) or {}

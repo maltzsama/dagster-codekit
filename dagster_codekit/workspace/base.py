@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Any
+from typing import Any
+
 from dagster_codekit.core.exceptions import ValidationError
 
 
@@ -15,7 +16,7 @@ class WorkspaceManager(ABC):
         """Check if workspace storage is accessible and writable."""
         pass
 
-    def _find_location_index(self, workspace: dict[str, Any], location_name: str) -> Optional[int]:
+    def _find_location_index(self, workspace: dict[str, Any], location_name: str) -> int | None:
         for i, loc in enumerate(workspace.get("load_from", [])):
             loc_name = (
                 loc.get("grpc_server", {}).get("location_name")

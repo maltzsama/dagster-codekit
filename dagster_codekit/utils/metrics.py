@@ -1,6 +1,6 @@
 """Prometheus metrics for dagster-codekit."""
 
-from prometheus_client import Counter, Gauge, generate_latest, REGISTRY
+from prometheus_client import REGISTRY, Counter, Gauge, generate_latest
 
 deployments_total = Counter(
     "codekit_deployments_total",

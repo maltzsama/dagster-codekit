@@ -10,16 +10,15 @@ import textwrap
 from unittest.mock import MagicMock
 
 import pytest
-
 from dagster._grpc.types import (
     ExecutionPlanSnapshotArgs,
 )
 from dagster._serdes import deserialize_value
 
-from dagster_codekit.core.engine import create_snapshot_payload
-from dagster_codekit.db.models import init_db, CodeLocation, Snapshot, db_session
-from dagster_codekit.core.grpc_proxy import CodekitProxyServicer
 from dagster_codekit.core.dagster_facade import RepositorySnap
+from dagster_codekit.core.engine import create_snapshot_payload
+from dagster_codekit.core.grpc_proxy import CodekitProxyServicer
+from dagster_codekit.db.models import CodeLocation, Snapshot, db_session, init_db
 
 
 def _make_mock_args(op_selection=None):

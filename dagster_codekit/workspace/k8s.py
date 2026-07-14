@@ -5,15 +5,15 @@ Manages workspace via Kubernetes ConfigMap with optimistic locking.
 
 import io
 import time
-from typing import Optional, Any
+from typing import Any
 
 import structlog
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from ruamel.yaml import YAML
 
-from dagster_codekit.workspace.base import WorkspaceManager
 from dagster_codekit.core.exceptions import ConfigurationError, ValidationError
+from dagster_codekit.workspace.base import WorkspaceManager
 
 logger = structlog.get_logger()
 
@@ -181,7 +181,7 @@ class K8sWorkspaceManager(WorkspaceManager):
 
                 raise ConfigurationError(f"K8s API error: {e.status} {e.reason}")
 
-    def _find_location_index(self, workspace: dict, location_name: str) -> Optional[int]:
+    def _find_location_index(self, workspace: dict, location_name: str) -> int | None:
         """Find location index by name, checking all Dagster source types."""
         for i, loc in enumerate(workspace.get("load_from", [])):
             loc_data = loc.get("grpc_server") or loc.get("python_package") or loc.get("python_file")

@@ -1,8 +1,10 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+
 from dagster_codekit.backends.argocd import ArgoCDBackend
-from dagster_codekit.core.exceptions import AuthenticationError
 from dagster_codekit.config import ArgoCDBackendConfig
+from dagster_codekit.core.exceptions import AuthenticationError
 
 
 @pytest.fixture

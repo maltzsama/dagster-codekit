@@ -7,7 +7,6 @@ Manages workspace.yaml file with atomic writes and file locking.
 import fcntl
 import os
 from pathlib import Path
-from typing import Optional
 
 import structlog
 from ruamel.yaml import YAML
@@ -153,7 +152,7 @@ class FileWorkspaceManager:
 
         logger.info("workspace_validation_success", path=self.path)
 
-    def _find_location_index(self, workspace: dict, location_name: str) -> Optional[int]:
+    def _find_location_index(self, workspace: dict, location_name: str) -> int | None:
         """
         Find location index by name.
 

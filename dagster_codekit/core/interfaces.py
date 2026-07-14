@@ -3,7 +3,7 @@ Core interfaces for dagster-codekit backends.
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 from starlette.requests import Request
 
@@ -33,7 +33,7 @@ class BackendPlugin(ABC):
         pass
 
     @abstractmethod
-    async def parse_event(self, payload: dict[str, Any]) -> Optional[DeploymentEvent]:
+    async def parse_event(self, payload: dict[str, Any]) -> DeploymentEvent | None:
         """
         Parse webhook payload into a standardized DeploymentEvent.
         Returns None if the event should be ignored.

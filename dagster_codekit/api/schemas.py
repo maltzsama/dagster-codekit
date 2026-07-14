@@ -1,13 +1,13 @@
 from dataclasses import dataclass, field
-from typing import Optional, Any
+from typing import Any
 
 
 @dataclass
 class DeploymentEvent:
     location_name: str
     image_tag: str
-    snapshot_json: Optional[str] = None
-    commit_hash: Optional[str] = None
+    snapshot_json: str | None = None
+    commit_hash: str | None = None
     k8s_config: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 

@@ -6,7 +6,6 @@ Manages workspace via Kubernetes ConfigMap with optimistic locking.
 
 import io
 import time
-from typing import Optional
 
 import structlog
 from ruamel.yaml import YAML
@@ -201,7 +200,7 @@ class K8sWorkspaceManager:
                 logger.error("k8s_configmap_update_failed", error=str(e))
                 raise
 
-    def _find_location_index(self, workspace: dict, location_name: str) -> Optional[int]:
+    def _find_location_index(self, workspace: dict, location_name: str) -> int | None:
         """Find location index by name."""
         for i, loc in enumerate(workspace.get("load_from", [])):
             loc_name = (

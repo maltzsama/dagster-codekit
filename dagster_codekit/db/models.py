@@ -1,19 +1,18 @@
-import json
-
 import datetime
+import json
 from contextlib import contextmanager
 from urllib.parse import urlparse
 
 import structlog
 from peewee import (
-    Model,
     CharField,
-    TextField,
+    DatabaseProxy,
     DateTimeField,
     ForeignKeyField,
-    DatabaseProxy,
+    Model,
+    TextField,
 )
-from playhouse.pool import PooledSqliteDatabase, PooledPostgresqlExtDatabase
+from playhouse.pool import PooledPostgresqlExtDatabase, PooledSqliteDatabase
 
 logger = structlog.get_logger(__name__)
 

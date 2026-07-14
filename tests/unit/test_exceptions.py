@@ -1,13 +1,14 @@
 """Tests for custom exceptions."""
 
 import pytest
+
 from dagster_codekit.core.exceptions import (
+    AuthenticationError,
     CodekitError,
     ConfigurationError,
-    ValidationError,
-    AuthenticationError,
-    TimeoutError,
     ConnectionError,
+    TimeoutError,
+    ValidationError,
 )
 
 

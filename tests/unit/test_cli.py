@@ -1,12 +1,10 @@
 """Tests for CLI commands."""
 
 import tempfile
-import os
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock  # <--- Importante: AsyncMock
+from unittest.mock import AsyncMock, patch  # <--- Importante: AsyncMock
 
 from click.testing import CliRunner
-import pytest
 
 from dagster_codekit.cli import main
 

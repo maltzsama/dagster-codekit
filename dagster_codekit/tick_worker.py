@@ -10,12 +10,12 @@ import sys
 import traceback
 
 from dagster import Definitions
-from dagster._grpc.types import ExternalScheduleExecutionArgs, SensorExecutionArgs
-from dagster._serdes import deserialize_value, serialize_value
 from dagster._core.host_representation.external_data import (
     ExternalScheduleExecutionData,
     ExternalSensorExecutionData,
 )
+from dagster._grpc.types import ExternalScheduleExecutionArgs, SensorExecutionArgs
+from dagster._serdes import deserialize_value, serialize_value
 
 
 def _load_defs(file_path: str):

@@ -1,6 +1,7 @@
 """Tests for core models."""
 
 import pytest
+
 from dagster_codekit import DeploymentEvent, ValidationResult
 
 

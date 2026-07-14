@@ -1,7 +1,9 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
-from dagster_codekit.utils.reloader import DagsterReloader
+
 from dagster_codekit.core.exceptions import AuthenticationError
+from dagster_codekit.utils.reloader import DagsterReloader
 
 
 @pytest.mark.asyncio

@@ -13,10 +13,10 @@ import structlog
 from dagster_codekit.config import AuthConfig
 from dagster_codekit.core.exceptions import (
     AuthenticationError,
+    CodekitError,
     ConfigurationError,
     ConnectionError,
     TimeoutError,
-    CodekitError,
 )
 
 # Global logger using contextvars for tracing (location, request_id, etc.)
@@ -136,7 +136,7 @@ class DagsterReloader:
         except httpx.ConnectError as e:
             raise ConnectionError(f"Could not connect to Dagster at {self.webserver_url}: {e}")
         except httpx.TimeoutException:
-            raise TimeoutError(f"Request to Dagster timed out after 30 seconds")
+            raise TimeoutError("Request to Dagster timed out after 30 seconds")
         except Exception as e:
             # Re-raise known exceptions, log and raise unknown ones
             if isinstance(

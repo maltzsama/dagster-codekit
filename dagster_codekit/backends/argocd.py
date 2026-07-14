@@ -1,14 +1,14 @@
 import hmac
-import structlog
-from typing import Any, Optional
+from typing import Any
 
+import structlog
 from starlette.requests import Request
 
-from dagster_codekit.core.interfaces import BackendPlugin
 from dagster_codekit import DeploymentEvent
-from dagster_codekit.core.exceptions import AuthenticationError, ValidationError, ConfigurationError
-from dagster_codekit.utils.health import wait_for_grpc_server
 from dagster_codekit.config import ArgoCDBackendConfig
+from dagster_codekit.core.exceptions import AuthenticationError, ConfigurationError, ValidationError
+from dagster_codekit.core.interfaces import BackendPlugin
+from dagster_codekit.utils.health import wait_for_grpc_server
 
 logger = structlog.get_logger()
 
@@ -33,7 +33,7 @@ class ArgoCDBackend(BackendPlugin):
 
         return True
 
-    async def parse_event(self, payload: dict[str, Any]) -> Optional[DeploymentEvent]:
+    async def parse_event(self, payload: dict[str, Any]) -> DeploymentEvent | None:
 
         app = payload.get("app", {})
         if not app:

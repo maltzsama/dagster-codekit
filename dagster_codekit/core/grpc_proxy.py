@@ -4,26 +4,30 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Iterator, Optional, Any
+from collections.abc import Iterator
+from concurrent import futures
+from typing import Any
 
 import grpc
 import structlog
-from concurrent import futures
+from dagster._core.execution.plan.outputs import StepOutputHandle, StepOutputProperties
+from dagster._core.snap.dep_snapshot import DependencyStructureIndex
+from dagster._core.snap.execution_plan_snapshot import (
+    ExecutionStepInputSnap,
+    ExecutionStepOutputSnap,
+    StepKind,
+)
 
 from dagster_codekit.core.dagster_facade import (
-    api_pb2,
-    api_pb2_grpc,
     CanCancelExecutionRequest,
     CanCancelExecutionResult,
     CancelExecutionRequest,
     CancelExecutionResult,
-    deserialize_value,
     ExecuteExternalJobArgs,
     ExecuteRunArgs,
     ExecutionPlanSnapshot,
     ExecutionPlanSnapshotArgs,
     ExecutionStepSnap,
-    ExternalJobArgs,
     GetCurrentRunsResult,
     JobSubsetSnapshotArgs,
     ListRepositoriesResponse,
@@ -35,21 +39,15 @@ from dagster_codekit.core.dagster_facade import (
     RemoteJobSubsetResult,
     RepositorySnap,
     SerializableErrorInfo,
-    serialize_value,
     ShutdownServerResult,
     StartRunResult,
     StaticPartitionsSnap,
     TimeWindowPartitionsSnap,
+    api_pb2,
+    api_pb2_grpc,
+    deserialize_value,
+    serialize_value,
 )
-
-from dagster._core.snap.dep_snapshot import DependencyStructureIndex
-from dagster._core.snap.execution_plan_snapshot import (
-    ExecutionStepInputSnap,
-    ExecutionStepOutputSnap,
-    StepKind,
-)
-from dagster._core.snap.node import OpDefSnap
-from dagster._core.execution.plan.outputs import StepOutputHandle, StepOutputProperties
 
 _TICK_WORKER_SCRIPT = r"""
 import importlib.util, os, sys, traceback
@@ -85,8 +83,8 @@ def main():
 if __name__ == "__main__": main()
 """.strip()
 
-from dagster_codekit.db.models import CodeLocation, Snapshot, db_session
-from dagster_codekit.utils.metrics import runs_launched_total, grpc_requests_total
+from dagster_codekit.db.models import CodeLocation, Snapshot, db_session  # noqa: E402
+from dagster_codekit.utils.metrics import grpc_requests_total, runs_launched_total  # noqa: E402
 
 logger = structlog.get_logger(__name__)
 
@@ -116,10 +114,10 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
                  k8s_service_account: str = "dagster",
                  k8s_image_pull_policy: str = "Always",
                  k8s_ttl_seconds: int = 300,
-                 forward_env_vars: Optional[list] = None,
+                 forward_env_vars: list | None = None,
                  docker_network: str = "host",
                  docker_auto_remove: bool = True,
-                 docker_forward_env_vars: Optional[list] = None):
+                 docker_forward_env_vars: list | None = None):
         self.launcher_mode = launcher_mode
         self.k8s_namespace = k8s_namespace
         self.k8s_service_account = k8s_service_account
@@ -728,7 +726,7 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
     # HELPERS
     # =========================================================================
 
-    def _get_latest_snapshot(self, location_name: str) -> Optional[Snapshot]:
+    def _get_latest_snapshot(self, location_name: str) -> Snapshot | None:
         with db_session():
             location = CodeLocation.get_or_none(name=location_name)
             if not location:
@@ -740,7 +738,7 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
                 .first()
             )
 
-    def _load_repository_snap(self, location_name: str) -> Optional[RepositorySnap]:
+    def _load_repository_snap(self, location_name: str) -> RepositorySnap | None:
         snapshot = self._get_latest_snapshot(location_name)
         if not snapshot:
             return None
@@ -878,7 +876,8 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
 
     def _launch_k8s_job(self, run_id: str, image: str, execute_run_args: ExecuteExternalJobArgs):
         try:
-            from kubernetes import client, config as k8s_config
+            from kubernetes import client
+            from kubernetes import config as k8s_config
         except ImportError:
             raise Exception(
                 "kubernetes package is not installed. Install with: "
@@ -1000,7 +999,7 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
             logger.info("k8s_job_created", job=job_name, location=location_name)
         except client.ApiException as e:
             logger.error("k8s_api_error", status=e.status, reason=e.reason)
-            raise Exception(f"Failed to create K8s Job: {e.reason}")
+            raise Exception(f"Failed to create K8s Job: {e.reason}") from e
 
     def _launch_docker_run(self, run_id: str, image: str, execute_run_args: ExecuteExternalJobArgs):
         run_args = ExecuteRunArgs(
@@ -1054,9 +1053,10 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
 
     def _cancel_k8s_job(self, run_id: str):
         try:
-            from kubernetes import client, config as k8s_config
+            from kubernetes import client
+            from kubernetes import config as k8s_config
         except ImportError:
-            raise Exception("kubernetes package is not installed")
+            raise Exception("kubernetes package is not installed") from ImportError
 
         try:
             k8s_config.load_incluster_config()
@@ -1076,7 +1076,8 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
 
     def _k8s_job_exists(self, run_id: str) -> bool:
         try:
-            from kubernetes import client, config as k8s_config
+            from kubernetes import client
+            from kubernetes import config as k8s_config
         except ImportError:
             return False
         try:
@@ -1140,9 +1141,10 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
 
         else:
             try:
-                from kubernetes import client, config as k8s_config
+                from kubernetes import client
+                from kubernetes import config as k8s_config
             except ImportError:
-                raise Exception("kubernetes package is not installed")
+                raise Exception("kubernetes package is not installed") from ImportError
 
             try:
                 k8s_config.load_incluster_config()
@@ -1214,10 +1216,10 @@ def run_grpc_server(host: str, port: int, db_conn: Any, max_workers: int = 10,
                    k8s_service_account: str = "dagster",
                    k8s_image_pull_policy: str = "Always",
                    k8s_ttl_seconds: int = 300,
-                   forward_env_vars: Optional[list] = None,
+                   forward_env_vars: list | None = None,
                    docker_network: str = "host",
                    docker_auto_remove: bool = True,
-                   docker_forward_env_vars: Optional[list] = None):
+                   docker_forward_env_vars: list | None = None):
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=max_workers))
     servicer = CodekitProxyServicer(
         launcher_mode=launcher_mode,

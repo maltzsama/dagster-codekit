@@ -7,7 +7,7 @@ should need changes.
 """
 
 from dagster import Definitions
-
+from dagster._core.execution.plan.outputs import StepOutputHandle
 from dagster._core.remote_representation.external_data import (
     JobDataSnap,
     MultiPartitionsSnap,
@@ -19,19 +19,16 @@ from dagster._core.remote_representation.external_data import (
     StaticPartitionsSnap,
     TimeWindowPartitionsSnap,
 )
-
 from dagster._core.snap.execution_plan_snapshot import (
     ExecutionPlanSnapshot,
-    ExecutionStepInputSnap,
-    ExecutionStepOutputSnap,
     ExecutionStepSnap,
 )
-
 from dagster._grpc.__generated__ import (
     dagster_api_pb2 as api_pb2,
+)
+from dagster._grpc.__generated__ import (
     dagster_api_pb2_grpc as api_pb2_grpc,
 )
-
 from dagster._grpc.types import (
     CanCancelExecutionRequest,
     CanCancelExecutionResult,
@@ -50,12 +47,8 @@ from dagster._grpc.types import (
     ShutdownServerResult,
     StartRunResult,
 )
-
 from dagster._serdes import deserialize_value, serialize_value
-
 from dagster._utils.error import SerializableErrorInfo
-
-from dagster._core.execution.plan.outputs import StepOutputHandle
 
 __all__ = [
     "Definitions",

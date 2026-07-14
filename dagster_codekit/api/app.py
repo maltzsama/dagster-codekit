@@ -1,20 +1,19 @@
-import structlog
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks
+import structlog
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from starlette.responses import Response
 
 from dagster_codekit.__version__ import __version__
-from dagster_codekit.config import load_config, Config
-from dagster_codekit.core.grpc_proxy import run_grpc_server
-from dagster_codekit.core.engine import create_snapshot_payload
 from dagster_codekit.api.schemas import DeploymentEvent
-from dagster_codekit.db.models import init_db, Snapshot, CodeLocation, db_session, db
+from dagster_codekit.config import load_config
+from dagster_codekit.core.grpc_proxy import run_grpc_server
+from dagster_codekit.db.models import CodeLocation, Snapshot, db_session, init_db
 from dagster_codekit.utils.metrics import (
     deployments_total,
+    get_metrics_response,
     locations_count,
     snapshots_count,
-    get_metrics_response,
 )
 
 logger = structlog.get_logger(__name__)
@@ -71,7 +70,7 @@ def verify_token(authorization: str = Header(None)):
         if token not in cfg.auth.tokens:
             raise HTTPException(status_code=403, detail="Invalid Token")
     except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid Header Format")
+        raise HTTPException(status_code=401, detail="Invalid Header Format") from None
 
 
 @app.get("/health/live")
@@ -168,7 +167,7 @@ async def receive_deployment(event: DeploymentEvent, background_tasks: Backgroun
 
     except Exception as e:
         logger.error("deploy_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.delete("/locations/{name}", dependencies=[Depends(verify_token)])
@@ -200,7 +199,7 @@ async def delete_location(name: str):
         raise
     except Exception as e:
         logger.error("delete_location_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @app.post("/locations/{name}/rollback", dependencies=[Depends(verify_token)])
@@ -260,4 +259,4 @@ async def rollback_location(name: str):
         raise
     except Exception as e:
         logger.error("rollback_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e

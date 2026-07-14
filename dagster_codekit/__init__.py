@@ -12,16 +12,16 @@ Components:
 
 from dagster_codekit.__version__ import __version__
 
-# Exceptions que podem estourar no cliente (CLI)
-from dagster_codekit.core.exceptions import (
-    CodekitError,
-    ConfigurationError,
-    AuthenticationError,
-    ConnectionError,
-)
-
 # Os schemas usados na comunicação CI <-> Proxy
 from dagster_codekit.api.schemas import DeploymentEvent
+
+# Exceptions que podem estourar no cliente (CLI)
+from dagster_codekit.core.exceptions import (
+    AuthenticationError,
+    CodekitError,
+    ConfigurationError,
+    ConnectionError,
+)
 
 __all__ = [
     "__version__",
