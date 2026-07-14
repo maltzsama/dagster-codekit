@@ -1,38 +1,67 @@
-from unittest.mock import AsyncMock, MagicMock
+"""Tests for the snapshot extraction engine."""
+
+import tempfile
+from pathlib import Path
 
 import pytest
 
+from dagster_codekit.core.engine import create_snapshot_payload, extract_repository_data
 from dagster_codekit import DeploymentEvent
-from dagster_codekit.core.engine import DeploymentEngine
-from dagster_codekit.utils.reloader import DagsterReloader
-from dagster_codekit.workspace.base import WorkspaceManager
 
 
-@pytest.mark.asyncio
-async def test_engine_process_deployment_success():
-    # Mocks
-    mock_workspace = MagicMock(spec=WorkspaceManager)
-    mock_reloader = AsyncMock(spec=DagsterReloader)
+@pytest.fixture
+def fixture_definitions():
+    """Create a temporary Dagster definitions file."""
+    code = """
+from dagster import Definitions, job, op
 
-    engine = DeploymentEngine(workspace_manager=mock_workspace, reloader=mock_reloader)
+@op
+def hello():
+    return "world"
 
-    event = DeploymentEvent(
-        location_name="analytics",
-        grpc_host="analytics.svc",
-        grpc_port=4000,
-        deployment_type="grpc-service",
-    )
+@job
+def my_job():
+    hello()
 
-    # Act
-    await engine.process_deployment(event)
+defs = Definitions(jobs=[my_job])
+"""
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".py", delete=False, prefix="defs_"
+    ) as f:
+        f.write(code)
 
-    # Assert
-    mock_workspace.add_or_update.assert_called_once()
-    mock_reloader.reload.assert_awaited_once()
+    yield f.name
+    Path(f.name).unlink()
 
-    # Verify logic of config builder
-    call_args = mock_workspace.add_or_update.call_args
-    assert call_args[0][0] == "analytics"
-    assert call_args[0][1] == {
-        "grpc_server": {"host": "analytics.svc", "port": 4000, "location_name": "analytics"}
-    }
+
+def test_extract_repository_data(fixture_definitions):
+    """Snapshot extraction should succeed for a valid definitions file."""
+    result = extract_repository_data(fixture_definitions, "test-location")
+    assert result is not None
+    assert len(result) > 100  # Non-trivial JSON
+
+
+def test_create_snapshot_payload(fixture_definitions):
+    """Snapshot payload should include location name and image tag."""
+    payload = create_snapshot_payload("test-location", fixture_definitions, "image:v1")
+    assert isinstance(payload, DeploymentEvent)
+    assert payload.location_name == "test-location"
+    assert payload.image_tag == "image:v1"
+    assert payload.snapshot_json is not None
+
+
+def test_extract_missing_file():
+    """Extraction should raise FileNotFoundError for missing files."""
+    with pytest.raises(FileNotFoundError):
+        extract_repository_data("/nonexistent/file.py", "test")
+
+
+def test_extract_empty_file():
+    """Extraction should raise for files without Definitions."""
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+        f.write("# empty file")
+    try:
+        with pytest.raises(ValueError, match="Definitions"):
+            extract_repository_data(f.name, "test")
+    finally:
+        Path(f.name).unlink()

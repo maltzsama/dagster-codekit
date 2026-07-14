@@ -12,7 +12,7 @@ from peewee import (
     Model,
     TextField,
 )
-from playhouse.pool import PooledPostgresqlExtDatabase, PooledSqliteDatabase
+from playhouse.pool import PooledSqliteDatabase
 
 logger = structlog.get_logger(__name__)
 
@@ -71,7 +71,12 @@ def _create_pooled_db(url: str):
             check_same_thread=False,
         )
     elif scheme in ("postgresql", "postgres"):
-        return PooledPostgresqlExtDatabase(
+        try:
+            from playhouse.pool import PooledPostgresqlExtDatabase as PgPool
+        except ImportError:
+            from playhouse.pool import PooledPostgresqlDatabase as PgPool
+
+        return PgPool(
             parsed.path.lstrip("/") if parsed.path else "codekit",
             user=parsed.username,
             password=parsed.password,
