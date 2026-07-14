@@ -1,12 +1,9 @@
 import os
-import structlog
 import importlib.util
-from dagster import Definitions
 
-from dagster._core.remote_representation.external_data import RepositorySnap
+import structlog
 
-from dagster._serdes import serialize_value
-
+from dagster_codekit.core.dagster_facade import Definitions, RepositorySnap, serialize_value
 from dagster_codekit.api.schemas import DeploymentEvent
 
 logger = structlog.get_logger(__name__)

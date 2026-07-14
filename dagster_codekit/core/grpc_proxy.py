@@ -10,36 +10,36 @@ import grpc
 import structlog
 from concurrent import futures
 
-from dagster._grpc.__generated__ import (
-    dagster_api_pb2 as api_pb2,
-    dagster_api_pb2_grpc as api_pb2_grpc,
-)
-from dagster._serdes import deserialize_value, serialize_value
-from dagster._utils.error import SerializableErrorInfo
-from dagster._core.snap.execution_plan_snapshot import ExecutionPlanSnapshot, ExecutionStepSnap
-from dagster._core.remote_representation.external_data import (
-    RepositorySnap,
-    StaticPartitionsSnap,
-    TimeWindowPartitionsSnap,
-    MultiPartitionsSnap,
-    PartitionNamesSnap,
-    PartitionExecutionErrorSnap,
-)
-from dagster._grpc.types import (
-    ExecutionPlanSnapshotArgs,
-    ExecuteExternalJobArgs,
-    ExecuteRunArgs,
-    ExternalJobArgs,
-    StartRunResult,
-    ListRepositoriesResponse,
-    LoadableRepositorySymbol,
-    CancelExecutionRequest,
-    CancelExecutionResult,
+from dagster_codekit.core.dagster_facade import (
+    api_pb2,
+    api_pb2_grpc,
     CanCancelExecutionRequest,
     CanCancelExecutionResult,
+    CancelExecutionRequest,
+    CancelExecutionResult,
+    deserialize_value,
+    ExecuteExternalJobArgs,
+    ExecuteRunArgs,
+    ExecutionPlanSnapshot,
+    ExecutionPlanSnapshotArgs,
+    ExecutionStepSnap,
+    ExternalJobArgs,
     GetCurrentRunsResult,
-    ShutdownServerResult,
+    JobSubsetSnapshotArgs,
+    ListRepositoriesResponse,
+    LoadableRepositorySymbol,
+    MultiPartitionsSnap,
+    PartitionExecutionErrorSnap,
     PartitionNamesArgs,
+    PartitionNamesSnap,
+    RemoteJobSubsetResult,
+    RepositorySnap,
+    SerializableErrorInfo,
+    serialize_value,
+    ShutdownServerResult,
+    StartRunResult,
+    StaticPartitionsSnap,
+    TimeWindowPartitionsSnap,
 )
 
 from dagster_codekit.db.models import CodeLocation, Snapshot, db_session
@@ -319,9 +319,6 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
 
     def ExternalPipelineSubsetSnapshot(self, request, context):
         try:
-            from dagster._grpc.types import JobSubsetSnapshotArgs
-            from dagster._core.remote_representation.external_data import RemoteJobSubsetResult
-
             args = deserialize_value(
                 request.serialized_pipeline_subset_snapshot_args, JobSubsetSnapshotArgs
             )
@@ -357,7 +354,6 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
             )
         except Exception as e:
             logger.error("external_pipeline_subset_error", error=str(e))
-            from dagster._core.remote_representation.external_data import RemoteJobSubsetResult
             result = RemoteJobSubsetResult(
                 success=False,
                 error=SerializableErrorInfo(
