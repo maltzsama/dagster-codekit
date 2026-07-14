@@ -1,10 +1,7 @@
 """Tests for CLI commands."""
 
 import os
-import tempfile
-from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
 from dagster_codekit.cli.main import cli

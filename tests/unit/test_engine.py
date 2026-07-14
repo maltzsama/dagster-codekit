@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from dagster_codekit.core.engine import create_snapshot_payload, extract_repository_data
 from dagster_codekit import DeploymentEvent
+from dagster_codekit.core.engine import create_snapshot_payload, extract_repository_data
 
 
 @pytest.fixture
