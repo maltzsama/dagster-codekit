@@ -1,6 +1,6 @@
 site_name: Dagster CodeKit
 site_description: Serverless Metadata Control Plane for Dagster OSS
-repo_url: https://github.com/dalbuquerque/dagster-codekit
+repo_url: https://github.com/maltzsama/dagster-codekit
 
 theme:
   name: material
