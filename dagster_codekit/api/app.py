@@ -187,3 +187,63 @@ async def delete_location(name: str):
     except Exception as e:
         logger.error("delete_location_failed", error=str(e))
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/locations/{name}/rollback", dependencies=[Depends(verify_token)])
+async def rollback_location(name: str):
+    logger.info("rollback_location_request", location=name)
+
+    try:
+        with db_session():
+            location = CodeLocation.get_or_none(CodeLocation.name == name)
+            if not location:
+                raise HTTPException(status_code=404, detail=f"Location '{name}' not found")
+
+            latest = (
+                Snapshot.select()
+                .where(Snapshot.location == location)
+                .order_by(Snapshot.created_at.desc())
+                .first()
+            )
+
+            if not latest:
+                raise HTTPException(status_code=404, detail=f"No snapshots found for '{name}'")
+
+            previous = (
+                Snapshot.select()
+                .where(
+                    Snapshot.location == location,
+                    Snapshot.id != latest.id,
+                )
+                .order_by(Snapshot.created_at.desc())
+                .first()
+            )
+
+            if not previous:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Cannot rollback: '{name}' has only one snapshot",
+                )
+
+            latest.delete_instance()
+
+            location.image = previous.image_tag
+            location.save()
+
+        logger.info(
+            "rollback_complete",
+            location=name,
+            removed_snapshot_id=latest.id,
+            active_snapshot_id=previous.id,
+            active_image=previous.image_tag,
+        )
+        return {
+            "status": "success",
+            "message": f"Rolled back '{name}' to snapshot {previous.id} ({previous.image_tag})",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("rollback_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))

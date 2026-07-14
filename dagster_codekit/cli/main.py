@@ -153,6 +153,43 @@ def delete(location: str, url: str, token: str | None):
         sys.exit(1)
 
 
+@cli.command()
+@click.option("--location", "-l", required=True, help="Name of the code location to rollback")
+@click.option("--url", default="http://localhost:8000", help="Codekit API URL")
+@click.option("--token", envvar="CODEKIT_TOKEN", help="Authentication token")
+def rollback(location: str, url: str, token: str | None):
+    """Rollback a code location to its previous snapshot."""
+    configure_logging("INFO")
+
+    click.echo(f"Rolling back location: {click.style(location, fg='yellow')}")
+
+    try:
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+        response = httpx.post(
+            f"{url}/locations/{location}/rollback", headers=headers, timeout=30.0
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            click.echo(click.style("Rollback successful!", fg="green", bold=True))
+            click.echo(f"   {data['message']}")
+        elif response.status_code == 404:
+            click.echo(click.style(f"Location '{location}' not found.", fg="yellow"))
+            sys.exit(1)
+        elif response.status_code == 409:
+            click.echo(click.style("Cannot rollback: only one snapshot exists.", fg="yellow"))
+            sys.exit(1)
+        else:
+            click.echo(click.style(f"Rollback failed: {response.status_code}", fg="red"))
+            click.echo(f"   Error: {response.text}")
+            sys.exit(1)
+
+    except Exception as e:
+        click.echo(click.style(f"Fatal error: {str(e)}", fg="red"), err=True)
+        sys.exit(1)
+
+
 # COMMAND: init
 @cli.command()
 def init():
