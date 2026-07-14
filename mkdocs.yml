@@ -1,0 +1,74 @@
+site_name: Dagster CodeKit
+site_description: Serverless Metadata Control Plane for Dagster OSS
+repo_url: https://github.com/dalbuquerque/dagster-codekit
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.sections
+    - search.highlight
+
+nav:
+  - Home: index.md
+  - Changelog: CHANGELOG.md
+  - API Reference:
+      - Package: api/dagster_codekit.md
+      - Config: api/config.md
+      - CLI: api/cli.md
+      - API:
+          - App: api/api/app.md
+          - Schemas: api/api/schemas.md
+      - Core:
+          - Engine: api/core/engine.md
+          - gRPC Proxy: api/core/grpc_proxy.md
+          - Interfaces: api/core/interfaces.md
+          - Exceptions: api/core/exceptions.md
+      - Database:
+          - Models: api/db/models.md
+      - Backends:
+          - ArgoCD: api/backends/argocd.md
+      - Workspace:
+          - Base: api/workspace/base.md
+          - Kubernetes: api/workspace/k8s.md
+          - File: api/workspace/file.md
+      - Utilities:
+          - Health: api/utils/health.md
+          - Logging: api/utils/logging.md
+          - Reloader: api/utils/reloader.md
+          - Metrics: api/utils/metrics.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            show_source: false
+            heading_level: 2
+            docstring_style: google
+            show_root_heading: true
+            show_root_toc_entry: true
+            members_order: source
+            separate_signature: true
+
+markdown_extensions:
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.snippets
