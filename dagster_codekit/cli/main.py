@@ -1,3 +1,4 @@
+import json
 import sys
 import asyncio
 import click
@@ -12,6 +13,7 @@ from dagster_codekit.config import load_config
 from dagster_codekit.utils.logging import configure_logging
 
 from dagster_codekit.core.engine import create_snapshot_payload
+from dagster_codekit.core.dagster_facade import RepositorySnap, deserialize_value
 
 logger = structlog.get_logger(__name__)
 
@@ -72,40 +74,50 @@ def start(config: str, port: int | None, log_level: str):
 @click.option("--image", "-i", required=True, help="Docker image tag (e.g. repo:tag)")
 @click.option("--url", default="http://localhost:8000", help="Codekit API URL")
 @click.option("--token", envvar="CODEKIT_TOKEN", help="Authentication token")
-def snapshot(location: str, file: str, image: str, url: str, token: str | None):
-    """
-    Generate and push a metadata snapshot to the Codekit server.
-    """
+@click.option("--dry-run", is_flag=True, default=False, help="Generate snapshot without pushing")
+def snapshot(location: str, file: str, image: str, url: str, token: str | None, dry_run: bool):
+    """Generate and push a metadata snapshot to the Codekit server."""
     configure_logging("INFO")
 
-    click.echo(f"📸 Generating snapshot for location: {click.style(location, fg='green')}")
+    click.echo(f"Generating snapshot for location: {click.style(location, fg='green')}")
     click.echo(f"   File: {file}")
     click.echo(f"   Image: {image}")
+    if dry_run:
+        click.echo(click.style("   Mode: dry-run (no push)", fg="yellow"))
 
     try:
         payload = create_snapshot_payload(location, file, image)
         json_size = len(payload.snapshot_json) / 1024
-        click.echo(f"📦 Snapshot generated: {json_size:.2f} KB")
+        click.echo(f"Snapshot generated: {json_size:.2f} KB")
+
+        repo_snap = deserialize_value(payload.snapshot_json, RepositorySnap)
+        click.echo(f"   Jobs: {len(repo_snap.job_datas)}")
+        click.echo(f"   Assets: {len(repo_snap.asset_nodes)}")
+        click.echo(f"   Schedules: {len(repo_snap.schedules)}")
+        click.echo(f"   Sensors: {len(repo_snap.sensors)}")
+
+        if dry_run:
+            click.echo(click.style("Dry-run complete, nothing pushed.", fg="yellow"))
+            return
 
         headers = {"Authorization": f"Bearer {token}"} if token else {}
 
-        click.echo(f"📤 Pushing to {url}/deploy...")
-        click.echo(f"Payload: {asdict(payload)}")
+        click.echo(f"Pushing to {url}/deploy...")
 
         response = httpx.post(
             f"{url}/deploy", json=asdict(payload), headers=headers, timeout=30.0
         )
 
         if response.status_code == 200:
-            click.echo(click.style("✅ Deploy successful!", fg="green", bold=True))
+            click.echo(click.style("Deploy successful!", fg="green", bold=True))
             click.echo(f"   Response: {response.json()}")
         else:
-            click.echo(click.style(f"❌ Deploy failed: {response.status_code}", fg="red"))
+            click.echo(click.style(f"Deploy failed: {response.status_code}", fg="red"))
             click.echo(f"   Error: {response.text}")
             sys.exit(1)
 
     except Exception as e:
-        click.echo(click.style(f"❌ Fatal error: {str(e)}", fg="red"), err=True)
+        click.echo(click.style(f"Fatal error: {str(e)}", fg="red"), err=True)
         sys.exit(1)
 
 
