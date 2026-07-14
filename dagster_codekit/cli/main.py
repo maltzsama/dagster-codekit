@@ -109,6 +109,38 @@ def snapshot(location: str, file: str, image: str, url: str, token: str | None):
         sys.exit(1)
 
 
+@cli.command()
+@click.option("--location", "-l", required=True, help="Name of the code location to delete")
+@click.option("--url", default="http://localhost:8000", help="Codekit API URL")
+@click.option("--token", envvar="CODEKIT_TOKEN", help="Authentication token")
+def delete(location: str, url: str, token: str | None):
+    """Delete a code location and all its snapshots from the Codekit server."""
+    configure_logging("INFO")
+
+    click.echo(f"Deleting location: {click.style(location, fg='yellow')}")
+
+    try:
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+        response = httpx.delete(
+            f"{url}/locations/{location}", headers=headers, timeout=30.0
+        )
+
+        if response.status_code == 200:
+            click.echo(click.style("Location deleted!", fg="green", bold=True))
+            click.echo(f"   {response.json()['message']}")
+        elif response.status_code == 404:
+            click.echo(click.style(f"Location '{location}' not found.", fg="yellow"))
+        else:
+            click.echo(click.style(f"Delete failed: {response.status_code}", fg="red"))
+            click.echo(f"   Error: {response.text}")
+            sys.exit(1)
+
+    except Exception as e:
+        click.echo(click.style(f"Fatal error: {str(e)}", fg="red"), err=True)
+        sys.exit(1)
+
+
 # COMMAND: init
 @cli.command()
 def init():
