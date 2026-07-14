@@ -1,12 +1,14 @@
 from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from starlette.responses import Response
 
 from dagster_codekit.__version__ import __version__
 from dagster_codekit.api.schemas import DeploymentEvent
+from dagster_codekit.backends.registry import BackendRegistry
 from dagster_codekit.config import load_config
+from dagster_codekit.core.exceptions import AuthenticationError
 from dagster_codekit.core.grpc_proxy import run_grpc_server
 from dagster_codekit.db.models import CodeLocation, Snapshot, db_session, init_db
 from dagster_codekit.utils.metrics import (
@@ -21,15 +23,18 @@ logger = structlog.get_logger(__name__)
 cfg = load_config("config.yaml")
 
 grpc_server_instance = None
+backend_registry: BackendRegistry | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global grpc_server_instance, backend_registry
     logger.info("startup", msg="Initializing Codekit...")
 
     init_db(cfg.database.url)
+    backend_registry = BackendRegistry(cfg.backends)
+    logger.info("backends_registered", backends=backend_registry.names)
 
-    global grpc_server_instance
     grpc_server_instance = run_grpc_server(
         host="0.0.0.0",
         port=cfg.server.grpc_port,
@@ -73,6 +78,36 @@ def verify_token(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="Invalid Header Format") from None
 
 
+def _register_deployment(event: DeploymentEvent):
+    """Shared deployment registration used by both /deploy and webhook routes."""
+    with db_session():
+        location, _ = CodeLocation.get_or_create(
+            name=event.location_name,
+            defaults={
+                "image": event.image_tag,
+                "namespace": cfg.launcher.k8s.namespace,
+            },
+        )
+
+        if location.image != event.image_tag:
+            location.image = event.image_tag
+
+        if event.k8s_config:
+            location.set_k8s_overrides(event.k8s_config)
+
+        location.save()
+
+        Snapshot.create(
+            location=location,
+            image_tag=event.image_tag,
+            content_json=event.snapshot_json,
+            git_hash=event.commit_hash,
+        )
+
+    logger.info("snapshot_persisted", location=event.location_name)
+    deployments_total.labels(location=event.location_name).inc()
+
+
 @app.get("/health/live")
 def liveness_check():
     return {"status": "alive"}
@@ -105,6 +140,8 @@ def metrics():
         locations_count.set(CodeLocation.select().count())
         snapshots_count.set(Snapshot.select().count())
     return Response(content=get_metrics_response(), media_type="text/plain")
+
+
 @app.get("/health")
 def health_check():
     db_ok = False
@@ -137,36 +174,41 @@ async def receive_deployment(event: DeploymentEvent, background_tasks: Backgroun
     logger.info("deploy_received", location=event.location_name, image=event.image_tag)
 
     try:
-        with db_session():
-            location, _ = CodeLocation.get_or_create(
-                name=event.location_name,
-                defaults={
-                    "image": event.image_tag,
-                    "namespace": cfg.launcher.k8s.namespace,
-                },
-            )
-
-            if location.image != event.image_tag:
-                location.image = event.image_tag
-
-            if event.k8s_config:
-                location.set_k8s_overrides(event.k8s_config)
-
-            location.save()
-
-            Snapshot.create(
-                location=location,
-                image_tag=event.image_tag,
-                content_json=event.snapshot_json,
-                git_hash=event.commit_hash,
-            )
-
-        logger.info("snapshot_persisted", location=event.location_name)
-        deployments_total.labels(location=event.location_name).inc()
+        _register_deployment(event)
         return {"status": "success", "message": "Snapshot accepted"}
 
     except Exception as e:
         logger.error("deploy_failed", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@app.post("/webhooks/{backend_name}")
+async def receive_webhook(backend_name: str, request: Request):
+    logger.info("webhook_received", backend=backend_name)
+
+    backend = backend_registry.get(backend_name) if backend_registry else None
+    if not backend:
+        raise HTTPException(status_code=404, detail=f"Backend '{backend_name}' not found")
+
+    try:
+        backend.validate_signature(request)
+    except AuthenticationError as e:
+        raise HTTPException(status_code=401, detail=str(e)) from e
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body") from None
+
+    event = await backend.parse_event(body)
+    if event is None:
+        return {"status": "ignored", "message": "Event does not represent a completed deployment"}
+
+    try:
+        _register_deployment(event)
+        return {"status": "success", "message": f"Webhook from '{backend_name}' processed"}
+    except Exception as e:
+        logger.error("webhook_register_failed", backend=backend_name, error=str(e))
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 

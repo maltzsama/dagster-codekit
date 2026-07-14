@@ -16,16 +16,13 @@ logger = structlog.get_logger()
 class ArgoCDBackend(BackendPlugin):
 
     def __init__(self, config: ArgoCDBackendConfig):
-
         self.config = config
 
     def name(self) -> str:
         return "argocd"
 
     def validate_signature(self, request: Request) -> bool:
-
         webhook_secret = self.config.webhook_secret
-
         received_secret = request.headers.get("X-Argocd-Webhook-Secret", "")
 
         if not hmac.compare_digest(webhook_secret, received_secret):
@@ -34,14 +31,13 @@ class ArgoCDBackend(BackendPlugin):
         return True
 
     async def parse_event(self, payload: dict[str, Any]) -> DeploymentEvent | None:
-
         app = payload.get("app", {})
         if not app:
             raise ValidationError("Invalid payload: missing 'app' field.")
 
-        metadata = app.get("metadata", {})
-        labels = metadata.get("labels", {})
-        name = metadata.get("name", "unknown")
+        meta = app.get("metadata", {})
+        labels = meta.get("labels", {})
+        name = meta.get("name", "unknown")
 
         if labels.get("dagster.io/code-location") != "true":
             logger.debug("argocd_ignored_no_label", app=name)
@@ -61,26 +57,33 @@ class ArgoCDBackend(BackendPlugin):
                 f"App '{name}' missing required label 'dagster.io/location-name'"
             )
 
-        namespace = metadata.get("namespace", "dagster")
-        default_host = f"{name}.{namespace}.svc.cluster.local"
+        image_tag = labels.get(
+            "dagster.io/image-tag",
+            labels.get("dagster.io/image", "unknown"),
+        )
 
+        namespace = meta.get("namespace", "dagster")
+        default_host = f"{name}.{namespace}.svc.cluster.local"
         grpc_host = labels.get("dagster.io/grpc-host", default_host)
         grpc_port = int(labels.get("dagster.io/grpc-port", "4000"))
 
         return DeploymentEvent(
             location_name=location_name,
-            grpc_host=grpc_host,
-            grpc_port=grpc_port,
-            namespace=namespace,
-            deployment_type="grpc-service",
-            metadata={"argocd_app": name, "source": "argocd"},
+            image_tag=image_tag,
+            metadata={
+                "argocd_app": name,
+                "source": "argocd",
+                "grpc_host": grpc_host,
+                "grpc_port": grpc_port,
+            },
         )
 
     async def wait_ready(self, event: DeploymentEvent) -> bool:
-
+        grpc_host = event.metadata.get("grpc_host", "")
+        grpc_port = event.metadata.get("grpc_port", 4000)
         return await wait_for_grpc_server(
-            host=event.grpc_host,
-            port=event.grpc_port,
+            host=grpc_host,
+            port=grpc_port,
             timeout=self.config.grpc_timeout,
             use_tls=self.config.grpc_tls,
             check_interval=self.config.check_interval,
