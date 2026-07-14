@@ -26,7 +26,6 @@ theme:
 
 nav:
   - Home: index.md
-  - Changelog: CHANGELOG.md
   - API Reference:
       - Package: api/dagster_codekit.md
       - Config: api/config.md
