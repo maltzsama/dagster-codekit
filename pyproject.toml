@@ -51,6 +51,7 @@ dependencies = [
     "httpx>=0.28.1",
     "grpcio>=1.78.0",
     "grpcio-health-checking>=1.78.0",
+    "prometheus-client>=0.22.0",
 ]
 
 # OPTIONAL DEPENDENCIES (Extras)

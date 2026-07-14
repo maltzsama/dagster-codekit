@@ -2,6 +2,7 @@ import structlog
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks
+from starlette.responses import Response
 
 from dagster_codekit.__version__ import __version__
 from dagster_codekit.config import load_config, Config
@@ -9,6 +10,12 @@ from dagster_codekit.core.grpc_proxy import run_grpc_server
 from dagster_codekit.core.engine import create_snapshot_payload
 from dagster_codekit.api.schemas import DeploymentEvent
 from dagster_codekit.db.models import init_db, Snapshot, CodeLocation, db_session, db
+from dagster_codekit.utils.metrics import (
+    deployments_total,
+    locations_count,
+    snapshots_count,
+    get_metrics_response,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -93,6 +100,12 @@ def readiness_check():
     }, status_code
 
 
+@app.get("/metrics")
+def metrics():
+    with db_session():
+        locations_count.set(CodeLocation.select().count())
+        snapshots_count.set(Snapshot.select().count())
+    return Response(content=get_metrics_response(), media_type="text/plain")
 @app.get("/health")
 def health_check():
     db_ok = False
@@ -150,6 +163,7 @@ async def receive_deployment(event: DeploymentEvent, background_tasks: Backgroun
             )
 
         logger.info("snapshot_persisted", location=event.location_name)
+        deployments_total.labels(location=event.location_name).inc()
         return {"status": "success", "message": "Snapshot accepted"}
 
     except Exception as e:

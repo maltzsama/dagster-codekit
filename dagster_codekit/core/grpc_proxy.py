@@ -43,6 +43,7 @@ from dagster_codekit.core.dagster_facade import (
 )
 
 from dagster_codekit.db.models import CodeLocation, Snapshot, db_session
+from dagster_codekit.utils.metrics import runs_launched_total, grpc_requests_total
 
 logger = structlog.get_logger(__name__)
 
@@ -159,6 +160,8 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
                 request.serialized_repository_python_origin
             )
             logger.info("external_repository_request", location=location_name)
+
+            grpc_requests_total.labels(method="ExternalRepository").inc()
 
             snapshot = self._get_latest_snapshot(location_name)
             if not snapshot:
@@ -485,6 +488,10 @@ class CodekitProxyServicer(api_pb2_grpc.DagsterApiServicer):
                     image=snapshot.image_tag,
                     execute_run_args=args,
                 )
+
+            runs_launched_total.labels(
+                location=location_name, launcher=self.launcher_mode
+            ).inc()
 
             return api_pb2.StartRunReply(
                 serialized_start_run_result=serialize_value(
