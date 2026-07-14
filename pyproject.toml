@@ -65,7 +65,7 @@ postgres = [
 
 # CLI ENTRYPOINT
 [project.scripts]
-dagster-codekit = "dagster_codekit.cli:cli"
+dagster-codekit = "dagster_codekit.cli.main:main"
 
 # BUILD CONFIG
 [build-system]

@@ -1,28 +1,31 @@
-"""
-Command-line interface for dagster-codekit.
-
-Provides commands to start server, validate config, and generate examples.
-"""
-
-import asyncio
 import sys
-
+import asyncio
 import click
+import uvicorn
+import httpx
+import structlog
+from pathlib import Path
+from dataclasses import asdict
 
 from dagster_codekit.__version__ import __version__
 from dagster_codekit.config import load_config
 from dagster_codekit.utils.logging import configure_logging
+
+from dagster_codekit.core.engine import create_snapshot_payload
+
+logger = structlog.get_logger(__name__)
 
 
 @click.group()
 @click.version_option(version=__version__, prog_name="dagster-codekit")
 def cli():
     """
-    dagster-codekit - Bridge between CI/CD and Dagster OSS.
-
-    Auto-reload Dagster code locations when deployments complete.
+    dagster-codekit - Metadata Control Plane for Dagster OSS.
     """
     pass
+
+
+# COMMAND: start (Server)
 
 
 @cli.command()
@@ -33,178 +36,111 @@ def cli():
     type=click.Path(exists=True),
     help="Path to config.yaml file",
 )
-@click.option(
-    "--host",
-    default=None,
-    help="Override server host from config",
-)
-@click.option(
-    "--port",
-    default=None,
-    type=int,
-    help="Override server port from config",
-)
-@click.option(
-    "--log-level",
-    default="INFO",
-    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR"], case_sensitive=False),
-    help="Set logging level",
-)
-def start(config: str, host: str | None, port: int | None, log_level: str):
+@click.option("--port", default=None, type=int, help="Override API port")
+@click.option("--log-level", default="INFO", help="Set logging level")
+def start(config: str, port: int | None, log_level: str):
     """
-    Start dagster-codekit server.
-
-    Loads configuration, validates it, and starts HTTP webhook server.
-
-    Example:
-        dagster-codekit start
-        dagster-codekit start --config /etc/dagster-codekit/config.yaml
-        dagster-codekit start --port 9000 --log-level DEBUG
+    Start the Codekit API & gRPC Proxy.
     """
-    # 1. Configure Logging First
     configure_logging(log_level)
+    click.echo(click.style(f"🚀 Starting dagster-codekit v{__version__}", fg="cyan", bold=True))
 
-    click.echo(f"🚀 Starting dagster-codekit v{__version__}")
-
-    # 2. Load and validate config
-    click.echo(f"📋 Loading config from: {config}")
     cfg = load_config(config)
-
-    # 3. Apply CLI overrides
-    if host:
-        cfg.server.host = host
     if port:
         cfg.server.port = port
 
-    click.echo(f"✅ Config validated successfully")
-    click.echo(f"🌐 Server starting on {cfg.server.host}:{cfg.server.port}")
+    click.echo(f"📋 Database: {cfg.database.url}")
+    click.echo(f"🌐 API Server: http://{cfg.server.host}:{cfg.server.port}")
 
-    # 4. Show enabled backends (Adaptado para o novo modelo tipado)
-    enabled_backends = []
-    if cfg.argocd:
-        enabled_backends.append("argocd")
-    if cfg.github:
-        enabled_backends.append("github")
+    uvicorn.run(
+        "dagster_codekit.api.app:app",
+        host=cfg.server.host,
+        port=cfg.server.port,
+        log_level=log_level.lower(),
+        factory=False,
+    )
 
-    if not enabled_backends:
-        click.echo("⚠️  WARNING: No backends enabled! Webhooks will return 404.")
-    else:
-        click.echo(f"🔌 Enabled backends: {', '.join(enabled_backends)}")
 
-    # 5. Run server
-    from dagster_codekit.api.app import run_server
-
-    try:
-        asyncio.run(run_server(cfg))
-    except KeyboardInterrupt:
-        click.echo("\n👋 Shutting down gracefully...")
-        sys.exit(0)
+# COMMAND: snapshot (The "Push")
 
 
 @cli.command()
-def init():
+@click.option("--location", "-l", required=True, help="Name of the code location")
+@click.option(
+    "--file", "-f", required=True, type=click.Path(exists=True), help="Path to definitions.py"
+)
+@click.option("--image", "-i", required=True, help="Docker image tag (e.g. repo:tag)")
+@click.option("--url", default="http://localhost:8000", help="Codekit API URL")
+@click.option("--token", envvar="CODEKIT_TOKEN", help="Authentication token")
+def snapshot(location: str, file: str, image: str, url: str, token: str | None):
     """
-    Generate example config.yaml.
+    Generate and push a metadata snapshot to the Codekit server.
     """
-    example_config = """# dagster-codekit configuration
-# See: https://github.com/maltzsama/dagster-codekit
+    configure_logging("INFO")
 
-# HTTP Server
+    click.echo(f"📸 Generating snapshot for location: {click.style(location, fg='green')}")
+    click.echo(f"   File: {file}")
+    click.echo(f"   Image: {image}")
+
+    try:
+        payload = create_snapshot_payload(location, file, image)
+        json_size = len(payload.snapshot_json) / 1024
+        click.echo(f"📦 Snapshot generated: {json_size:.2f} KB")
+
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+
+        click.echo(f"📤 Pushing to {url}/deploy...")
+        click.echo(f"Payload: {asdict(payload)}")
+
+        response = httpx.post(
+            f"{url}/deploy", json=asdict(payload), headers=headers, timeout=30.0
+        )
+
+        if response.status_code == 200:
+            click.echo(click.style("✅ Deploy successful!", fg="green", bold=True))
+            click.echo(f"   Response: {response.json()}")
+        else:
+            click.echo(click.style(f"❌ Deploy failed: {response.status_code}", fg="red"))
+            click.echo(f"   Error: {response.text}")
+            sys.exit(1)
+
+    except Exception as e:
+        click.echo(click.style(f"❌ Fatal error: {str(e)}", fg="red"), err=True)
+        sys.exit(1)
+
+
+# COMMAND: init
+@cli.command()
+def init():
+    """Generate a modern, snapshot-ready config.yaml."""
+    example = """# dagster-codekit modern configuration
 server:
   host: 0.0.0.0
   port: 8000
 
-# Dagster Connection
+# Persistence for snapshots and RBAC
+database:
+  url: "sqlite:///./codekit.db"
+
+# Universal gRPC Proxy (The one Dagster Webserver talks to)
+proxy:
+  host: 0.0.0.0
+  port: 4000
+
 dagster:
-  webserver_url: http://dagster-webserver:3000
-  
-  # Optional: Authentication (if Dagster has auth enabled)
-  # auth:
-  #   type: header
-  #   header_name: X-Auth-Token
-  #   token_env: DAGSTER_AUTH_TOKEN
+  webserver_url: http://localhost:3000
 
-# Workspace Management
-workspace:
-  mode: configmap  # 'file' or 'configmap'
-  
-  # If mode=file (Docker Compose, VMs)
-  # file:
-  #   path: /opt/dagster/workspace.yaml
-  
-  # If mode=configmap (Kubernetes)
-  configmap:
-    namespace: dagster
-    name: dagster-workspace
-    max_retries: 5
-
-# CI/CD Backends
 backends:
-  # ArgoCD (Recommended for Kubernetes/Helm/Kustomize)
   argocd:
     enabled: true
-    webhook_secret: CHANGE_ME  # Generate with: openssl rand -hex 32
-    grpc_timeout: 60
-  
-  # GitHub Actions (Alternative for direct push)
-  # github:
-  #   enabled: false
-  #   webhook_secret: CHANGE_ME
-  #   repositories:
-  #     - repo: company/data-platform
-  #       locations:
-  #         - name: analytics
-  #           grpc_host: analytics.dagster.svc.cluster.local
-  #           grpc_port: 4000
+    webhook_secret: "generate-a-long-secret-here"
 """
-    click.echo(example_config)
-
-
-@cli.command()
-@click.argument("config_path", default="config.yaml")
-def validate(config_path: str):
-    """
-    Validate configuration file.
-
-    Checks that config.yaml is valid and all required fields are present.
-    """
-    click.echo(f"🔍 Validating config: {config_path}")
-
-    # load_config will exit(1) with clear errors if invalid
-    cfg = load_config(config_path)
-
-    click.echo(f"✅ Config is valid!")
-    click.echo(f"\n📊 Configuration summary:")
-    click.echo(f"  Server: {cfg.server.host}:{cfg.server.port}")
-    click.echo(f"  Dagster: {cfg.dagster.webserver_url}")
-    click.echo(f"  Workspace mode: {cfg.workspace.mode}")
-
-    # Show enabled backends
-    enabled_backends = []
-    if cfg.argocd:
-        enabled_backends.append("argocd")
-    if cfg.github:
-        enabled_backends.append("github")
-
-    if enabled_backends:
-        click.echo(f"\n🔌 Enabled backends:")
-        for name in enabled_backends:
-            click.echo(f"  • {name}")
-    else:
-        click.echo(f"\n⚠️  No backends enabled!")
-
-
-@cli.command()
-def version():
-    """
-    Show version information.
-    """
-    click.echo(f"dagster-codekit version {__version__}")
-    click.echo(f"Python {sys.version}")
+    with open("config.yaml", "w") as f:
+        f.write(example)
+    click.echo("✅ Created config.yaml with database and proxy settings.")
 
 
 def main():
-    """Entry point for the CLI."""
     cli()
 
 
