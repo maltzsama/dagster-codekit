@@ -1,13 +1,14 @@
 import structlog
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks
-from pydantic import ValidationError
 
+from fastapi import FastAPI, HTTPException, Header, Depends, BackgroundTasks
+
+from dagster_codekit.__version__ import __version__
 from dagster_codekit.config import load_config, Config
 from dagster_codekit.core.grpc_proxy import run_grpc_server
 from dagster_codekit.core.engine import create_snapshot_payload
 from dagster_codekit.api.schemas import DeploymentEvent
-from dagster_codekit.db.models import init_db, Snapshot, CodeLocation, db_session
+from dagster_codekit.db.models import init_db, Snapshot, CodeLocation, db_session, db
 
 logger = structlog.get_logger(__name__)
 
@@ -66,9 +67,57 @@ def verify_token(authorization: str = Header(None)):
         raise HTTPException(status_code=401, detail="Invalid Header Format")
 
 
+@app.get("/health/live")
+def liveness_check():
+    return {"status": "alive"}
+
+
+@app.get("/health/ready")
+def readiness_check():
+    db_ok = False
+    db_error = None
+
+    try:
+        with db_session():
+            CodeLocation.select().limit(1).count()
+        db_ok = True
+    except Exception as e:
+        db_error = str(e)
+
+    status_code = 200 if db_ok else 503
+    return {
+        "status": "ready" if db_ok else "not ready",
+        "checks": {
+            "database": {"ok": db_ok, "error": db_error},
+        },
+    }, status_code
+
+
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "version": "1.0.0"}
+    db_ok = False
+    db_error = None
+
+    try:
+        with db_session():
+            CodeLocation.select().limit(1).count()
+        db_ok = True
+    except Exception as e:
+        db_error = str(e)
+
+    grpc_ok = grpc_server_instance is not None
+
+    all_ok = db_ok and grpc_ok
+    status_code = 200 if all_ok else 503
+
+    return {
+        "status": "healthy" if all_ok else "degraded",
+        "version": __version__,
+        "checks": {
+            "database": {"ok": db_ok, "error": db_error},
+            "grpc_proxy": {"ok": grpc_ok},
+        },
+    }, status_code
 
 
 @app.post("/deploy", dependencies=[Depends(verify_token)])
