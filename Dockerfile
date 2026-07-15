@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY dagster_codekit/ ./dagster_codekit/
+COPY migrations/ ./migrations/
 
 RUN pip install --no-cache-dir ".[kubernetes,postgres]"
 
@@ -22,6 +23,7 @@ RUN useradd --create-home --shell /bin/bash codekit
 
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder /app/migrations /opt/dagster/migrations
 
 RUN mkdir -p /opt/dagster/dagster_home && chown -R codekit:codekit /opt/dagster
 
@@ -34,4 +36,4 @@ HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
     CMD curl -f http://localhost:8000/health/live || exit 1
 
 ENTRYPOINT ["dagster-codekit"]
-CMD ["start"]
+CMD ["start", "--config", "/etc/codekit/config.yaml"]

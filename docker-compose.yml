@@ -7,7 +7,8 @@ services:
       - "8000:8000"
       - "4000:4000"
     environment:
-      - CODEDIT_CONFIG_PATH=/etc/codekit/config.yaml
+      - CODEKIT_REPLICA_COUNT=1
+      - CODEKIT_MIGRATIONS_DIR=/opt/dagster/migrations
     volumes:
       - ./examples/docker-compose/config.sqlite.yaml:/etc/codekit/config.yaml:ro
       - codekit-data:/opt/dagster/codekit_data
@@ -24,6 +25,7 @@ services:
       - DAGSTER_POSTGRES_PASSWORD=codekit
       - DAGSTER_POSTGRES_DB=codekit
       - DAGSTER_POSTGRES_HOSTNAME=postgres
+      - CODEKIT_MIGRATIONS_DIR=/opt/dagster/migrations
     volumes:
       - ./examples/docker-compose/config.postgres.yaml:/etc/codekit/config.yaml:ro
     depends_on:
