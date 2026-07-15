@@ -5,6 +5,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Re
 from starlette.responses import Response
 
 from dagster_codekit.__version__ import __version__
+from dagster_codekit.api.middleware import MemoryRateLimiter, RateLimitMiddleware, RedisRateLimiter
 from dagster_codekit.api.schemas import DeploymentEvent
 from dagster_codekit.backends.registry import BackendRegistry
 from dagster_codekit.config import load_config
@@ -59,6 +60,24 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Dagster Codekit", version="1.0.0", lifespan=lifespan)
+
+# Body size limit: 10 MB for ingestion endpoints
+MAX_BODY_SIZE = 10 * 1024 * 1024
+
+# Rate limiting middleware
+if cfg.rate_limit.enabled:
+    if cfg.rate_limit.backend == "redis":
+        if not cfg.rate_limit.redis_url:
+            logger.warning("rate_limit_redis_missing_url", msg="Redis backend selected but no redis_url configured")
+        else:
+            limiter = RedisRateLimiter(
+                cfg.rate_limit.requests_per_minute,
+                cfg.rate_limit.redis_url,
+            )
+            app.add_middleware(RateLimitMiddleware, limiter=limiter, key_by=cfg.rate_limit.key_by)
+    else:
+        limiter = MemoryRateLimiter(cfg.rate_limit.requests_per_minute)
+        app.add_middleware(RateLimitMiddleware, limiter=limiter, key_by=cfg.rate_limit.key_by)
 
 
 def verify_token(authorization: str = Header(None)):

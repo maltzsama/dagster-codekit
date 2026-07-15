@@ -63,3 +63,50 @@ jobs:
             .pytest_cache/
             coverage.xml
           retention-days: 7
+
+  e2e-kubernetes:
+    name: E2E Kubernetes (kind)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: codekit-e2e
+
+      - name: Build Docker image
+        run: docker build -t dagster-codekit:latest .
+
+      - name: Load image into kind
+        run: kind load docker-image dagster-codekit:latest --name codekit-e2e
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install test deps
+        run: uv pip install --system -e ".[dev,kubernetes]"
+
+      - name: Deploy codekit to kind
+        run: |
+          kubectl create namespace dagster --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f examples/kubernetes/manifests.yaml -n dagster
+          kubectl wait --for=condition=available deployment/codekit -n dagster --timeout=60s
+
+      - name: Port forward and run e2e
+        run: |
+          kubectl port-forward -n dagster svc/codekit 4000:4000 &
+          sleep 3
+          uv run pytest tests/e2e/test_k8s_launcher.py -v --tb=short
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          kubectl logs -n dagster deployment/codekit --tail=100 || true
+          kubectl get jobs -n dagster -o yaml || true

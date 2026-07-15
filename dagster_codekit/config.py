@@ -118,12 +118,23 @@ class LoggingConfig(BaseModel):
     format: Literal["console", "json"] = "console"
 
 
+class RateLimitConfig(BaseModel):
+    enabled: bool = False
+    requests_per_minute: int = Field(60, description="Per-key rate limit on ingestion endpoints")
+    backend: Literal["memory", "redis"] = Field(
+        "memory", description="'memory' for single-pod; 'redis' for multi-pod"
+    )
+    redis_url: str | None = Field(None, description="Redis connection URL (required for redis backend)")
+    key_by: Literal["token", "ip"] = Field("ip", description="Rate limit by 'token' or 'ip'")
+
+
 class Config(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     database: DatabaseConfig = Field(default_factory=DatabaseConfig)
     launcher: LauncherConfig = Field(default_factory=LauncherConfig)
     backends: BackendsConfig = Field(default_factory=BackendsConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
 
 

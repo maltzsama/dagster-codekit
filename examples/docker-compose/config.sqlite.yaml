@@ -1,0 +1,24 @@
+# dagster-codekit config for docker-compose (SQLite)
+server:
+  host: 0.0.0.0
+  port: 8000
+  grpc_port: 4000
+  workers: 4
+
+database:
+  url: "sqlite:////opt/dagster/codekit_data/codekit.db"
+
+launcher:
+  enabled: true
+  mode: docker
+  docker:
+    network: host
+    auto_remove: true
+
+auth:
+  enabled: false
+  tokens: []
+
+logging:
+  level: INFO
+  format: console

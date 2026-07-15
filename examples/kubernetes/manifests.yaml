@@ -1,0 +1,147 @@
+# dagster-codekit proxy deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: codekit
+  namespace: dagster
+  labels:
+    app.kubernetes.io/name: dagster-codekit
+    app.kubernetes.io/component: proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dagster-codekit
+      app.kubernetes.io/component: proxy
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dagster-codekit
+        app.kubernetes.io/component: proxy
+    spec:
+      serviceAccountName: codekit
+      containers:
+        - name: codekit
+          image: dagster-codekit:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+            - name: grpc
+              containerPort: 4000
+          env:
+            - name: DAGSTER_HOME
+              value: /opt/dagster/dagster_home
+          volumeMounts:
+            - name: config
+              mountPath: /etc/codekit
+              readOnly: true
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: codekit-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: codekit
+  namespace: dagster
+  labels:
+    app.kubernetes.io/name: dagster-codekit
+spec:
+  selector:
+    app.kubernetes.io/name: dagster-codekit
+    app.kubernetes.io/component: proxy
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+    - name: grpc
+      port: 4000
+      targetPort: grpc
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: codekit-config
+  namespace: dagster
+data:
+  config.yaml: |
+    server:
+      host: 0.0.0.0
+      port: 8000
+      grpc_port: 4000
+      workers: 4
+    database:
+      url: "postgresql://${DAGSTER_POSTGRES_USER}:${DAGSTER_POSTGRES_PASSWORD}@${DAGSTER_POSTGRES_HOSTNAME}:5432/${DAGSTER_POSTGRES_DB}"
+    launcher:
+      enabled: true
+      mode: k8s
+      k8s:
+        namespace: dagster
+        service_account: codekit
+        image_pull_policy: IfNotPresent
+        ttl_seconds_after_finished: 300
+        forward_env_vars:
+          - DAGSTER_POSTGRES_USER
+          - DAGSTER_POSTGRES_PASSWORD
+          - DAGSTER_POSTGRES_DB
+          - DAGSTER_POSTGRES_HOSTNAME
+    auth:
+      enabled: false
+      tokens: []
+    logging:
+      level: INFO
+      format: console
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: codekit
+  namespace: dagster
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: codekit
+  namespace: dagster
+rules:
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "delete"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: codekit
+  namespace: dagster
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: codekit
+subjects:
+  - kind: ServiceAccount
+    name: codekit
+    namespace: dagster

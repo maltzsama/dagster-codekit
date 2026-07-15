@@ -1,0 +1,42 @@
+name: Dagster Version Matrix
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+jobs:
+  test-versions:
+    name: "Dagster ${{ matrix.dagster-version }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dagster-version:
+          - "1.12.*"
+          - "1.13.*"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dagster ${{ matrix.dagster-version }}
+        run: uv pip install --system "dagster${{ matrix.dagster-version }}"
+
+      - name: Install codekit deps
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Test snapshot extraction
+        run: uv run pytest tests/unit/test_engine.py -v --tb=short
+
+      - name: Test execution plan correctness
+        run: uv run pytest tests/e2e/test_grpc_proxy_e2e.py -v --tb=short -k "TestExecutionPlanCorrectness or TestPartitions"
+
+      - name: Test config
+        run: uv run pytest tests/unit/test_config.py -v --tb=short

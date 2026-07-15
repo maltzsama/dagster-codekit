@@ -1,0 +1,24 @@
+# dagster-codekit config for docker-compose (Postgres)
+server:
+  host: 0.0.0.0
+  port: 8000
+  grpc_port: 4000
+  workers: 4
+
+database:
+  url: "postgresql://${DAGSTER_POSTGRES_USER}:${DAGSTER_POSTGRES_PASSWORD}@${DAGSTER_POSTGRES_HOSTNAME}:5432/${DAGSTER_POSTGRES_DB}"
+
+launcher:
+  enabled: true
+  mode: docker
+  docker:
+    network: host
+    auto_remove: true
+
+auth:
+  enabled: false
+  tokens: []
+
+logging:
+  level: INFO
+  format: console
