@@ -1,0 +1,15 @@
+apiVersion: v2
+name: dagster-codekit
+description: Serverless Metadata Control Plane for Dagster OSS
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - dagster
+  - code-server
+  - gitops
+  - kubernetes
+  - serverless
+maintainers:
+  - name: Demetrius Albuquerque
+    email: demetrius.albuquerque@yahoo.com.br

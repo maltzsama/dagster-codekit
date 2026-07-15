@@ -1,0 +1,61 @@
+{{- if not .Values.codekit.existingConfig }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dagster-codekit.fullname" . }}-config
+  labels:
+    {{- include "dagster-codekit.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    server:
+      host: 0.0.0.0
+      port: {{ .Values.service.httpPort }}
+      grpc_port: {{ .Values.service.grpcPort }}
+      workers: {{ .Values.codekit.server.workers }}
+
+    database:
+      url: {{ .Values.codekit.database.url | quote }}
+
+    launcher:
+      enabled: true
+      mode: {{ .Values.codekit.launcher.mode }}
+      k8s:
+        namespace: {{ .Values.codekit.launcher.k8s.namespace }}
+        {{- if .Values.codekit.launcher.k8s.serviceAccount }}
+        service_account: {{ .Values.codekit.launcher.k8s.serviceAccount }}
+        {{- else }}
+        service_account: {{ include "dagster-codekit.fullname" . }}
+        {{- end }}
+        image_pull_policy: {{ .Values.codekit.launcher.k8s.imagePullPolicy }}
+        ttl_seconds_after_finished: {{ .Values.codekit.launcher.k8s.ttlSecondsAfterFinished }}
+        forward_env_vars:
+          {{- range .Values.codekit.launcher.k8s.forwardEnvVars }}
+          - {{ . }}
+          {{- end }}
+      docker:
+        network: {{ .Values.codekit.launcher.docker.network }}
+        auto_remove: {{ .Values.codekit.launcher.docker.autoRemove }}
+
+    {{- if .Values.codekit.auth.enabled }}
+    auth:
+      enabled: true
+      tokens:
+      {{- range .Values.codekit.auth.tokens }}
+        - {{ . | quote }}
+      {{- end }}
+    {{- end }}
+
+    {{- if .Values.codekit.rateLimit.enabled }}
+    rate_limit:
+      enabled: true
+      requests_per_minute: {{ .Values.codekit.rateLimit.requestsPerMinute }}
+      backend: {{ .Values.codekit.rateLimit.backend }}
+      {{- if eq .Values.codekit.rateLimit.backend "redis" }}
+      redis_url: {{ required "codekit.rateLimit.redisUrl is required when backend=redis" .Values.codekit.rateLimit.redisUrl | quote }}
+      {{- end }}
+    {{- end }}
+
+    logging:
+      level: {{ .Values.codekit.logging.level }}
+      format: {{ .Values.codekit.logging.format }}
+{{- end }}

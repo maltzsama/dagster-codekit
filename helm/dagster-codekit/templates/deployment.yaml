@@ -1,0 +1,114 @@
+{{- $replicaCount := .Values.codekit.replicaCount | default .Values.replicaCount | int }}
+{{- $isSqlite := hasPrefix "sqlite" .Values.codekit.database.url }}
+{{- if and $isSqlite (gt $replicaCount 1) }}
+{{- fail "SQLite cannot be used with replicaCount > 1. Set codekit.database.url to a Postgres DSN." }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dagster-codekit.fullname" . }}
+  labels:
+    {{- include "dagster-codekit.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ $replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "dagster-codekit.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "dagster-codekit.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "dagster-codekit.fullname" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - start
+            - --config
+            - /etc/codekit/config.yaml
+          env:
+            - name: DAGSTER_HOME
+              value: /opt/dagster/dagster_home
+            - name: CODEKIT_MIGRATIONS_DIR
+              value: /opt/dagster/migrations
+            {{- if $isSqlite }}
+            - name: CODEKIT_REPLICA_COUNT
+              value: {{ $replicaCount | quote }}
+            {{- end }}
+            {{- if and .Values.codekit.auth.enabled .Values.codekit.auth.existingSecret }}
+            - name: CODEKIT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.codekit.auth.existingSecret }}
+                  key: CODEKIT_TOKEN
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.httpPort }}
+              protocol: TCP
+            - name: grpc
+              containerPort: {{ .Values.service.grpcPort }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/codekit
+              readOnly: true
+            {{- if and $isSqlite .Values.persistence.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Values.codekit.existingConfig | default (printf "%s-config" (include "dagster-codekit.fullname" .)) }}
+        {{- if and $isSqlite .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "dagster-codekit.fullname" . }}-data
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,32 @@
+Dagster CodeKit {{ .Chart.AppVersion }} installed!
+
+1. The proxy is serving:
+   - HTTP API:  port {{ .Values.service.httpPort }}
+   - gRPC Proxy: port {{ .Values.service.grpcPort }}
+
+2. Point your Dagster workspace at the gRPC proxy:
+   ```yaml
+   load_from:
+     - grpc_server:
+         host: {{ include "dagster-codekit.fullname" . }}
+         port: {{ .Values.service.grpcPort }}
+         location_name: your-location
+   ```
+
+3. Deploy a code location from CI/CD:
+   ```bash
+   dagster-codekit snapshot \
+     --location your-location \
+     --file definitions.py \
+     --image registry.example.com/your-image:v1
+   ```
+
+{{- if and (hasPrefix "sqlite" .Values.codekit.database.url) (gt ($.Values.codekit.replicaCount | default .Values.replicaCount | int) 1) }}
+WARNING: SQLite with replicaCount > 1 is not supported.
+Set codekit.database.url to a Postgres DSN.
+{{- end }}
+
+{{- if not (hasPrefix "postgres" .Values.codekit.database.url) }}
+SQLite is configured. This is safe for single-replica use only.
+For production with multiple replicas, use a Postgres database.
+{{- end }}

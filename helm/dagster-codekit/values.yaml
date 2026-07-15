@@ -1,0 +1,116 @@
+# Default values for dagster-codekit.
+replicaCount: 1
+
+image:
+  repository: ghcr.io/maltzsama/dagster-codekit
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+rbac:
+  create: true
+
+podAnnotations: {}
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  httpPort: 8000
+  grpcPort: 4000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: codekit.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# --- CodeKit Configuration ---
+
+codekit:
+  existingConfig: ""
+
+  database:
+    url: "sqlite:////data/codekit.db"
+
+  launcher:
+    mode: k8s
+    k8s:
+      namespace: dagster
+      serviceAccount: ""
+      imagePullPolicy: IfNotPresent
+      ttlSecondsAfterFinished: 300
+      forwardEnvVars:
+        - DAGSTER_POSTGRES_USER
+        - DAGSTER_POSTGRES_PASSWORD
+        - DAGSTER_POSTGRES_DB
+        - DAGSTER_POSTGRES_HOSTNAME
+    docker:
+      network: host
+      autoRemove: true
+
+  server:
+    workers: 4
+
+  auth:
+    enabled: false
+    existingSecret: ""
+    tokens: []
+
+  rateLimit:
+    enabled: false
+    requestsPerMinute: 60
+    backend: memory
+    redisUrl: ""
+
+  logging:
+    level: INFO
+    format: console
+
+  replicaCount: 0
+
+# --- Persistence (for SQLite) ---
+persistence:
+  enabled: true
+  size: 1Gi
+  accessMode: ReadWriteOnce
