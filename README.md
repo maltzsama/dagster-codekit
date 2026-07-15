@@ -75,15 +75,30 @@ flowchart TB
 * ✅ **Health checks** — `/health/ready`, `/health/live` with DB and gRPC verification.
 * ✅ **Prometheus metrics** — Deployments, runs, gRPC requests, locations count.
 * ✅ **Token auth** — Protect the `/deploy` endpoint.
-* ✅ **ArgoCD backend** — Webhook-based automatic workspace updates.
+* ✅ **Multi-backend webhooks** — ArgoCD, Forgejo, Azure DevOps native integration.
+* ✅ **Rate limiting** — In-memory and Redis-backed abuse protection on ingestion endpoints.
+* ✅ **Docker Compose** — One-command local deployment (SQLite and Postgres profiles).
+* ✅ **Real cancellation** — `CancelExecution` deletes K8s Jobs / Docker containers.
+* ✅ **Sensor & schedule support** — Ephemeral tick evaluation workers.
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Install
+### Fastest path — Docker Compose
 
 ```bash
+cd examples/docker-compose
+docker compose --profile sqlite up
+```
+
+CodeKit is now running on `http://localhost:8000` (API) and `localhost:4000` (gRPC).
+Skip to step 4 to deploy your first code location.
+
+### Manual install
+
+```bash
+# 1. Install
 pip install dagster-codekit
 
 # With Kubernetes support
@@ -91,25 +106,17 @@ pip install dagster-codekit[kubernetes]
 
 # With Postgres support
 pip install dagster-codekit[postgres]
-```
 
-### 2. Initialize config
-
-```bash
+# 2. Initialize config
 dagster-codekit init
-```
 
-This creates a `config.yaml` with sensible defaults (SQLite, k8s launcher, auth disabled).
-
-### 3. Start the server
-
-```bash
+# 3. Start the server
 dagster-codekit start
 ```
 
 Starts the API on `:8000` and the gRPC proxy on `:4000`.
 
-### 4. Deploy a code location from CI/CD
+### Deploy a code location from CI/CD
 
 ```bash
 dagster-codekit snapshot \
@@ -231,14 +238,60 @@ backends:
     enabled: false
     webhook_secret: ""
     grpc_timeout: 30
+  forgejo:
+    enabled: false
+    webhook_secret: ""
+    payload_mode: custom
+  azure_devops:
+    enabled: false
+    webhook_secret: ""
+    header_name: X-Codekit-Webhook-Token
 
 auth:
   enabled: false
   tokens: []
 
+rate_limit:
+  enabled: false
+  requests_per_minute: 60
+  backend: memory       # or 'redis' for multi-pod
+  redis_url: null
+
 logging:
   level: INFO
-  format: console     # or 'json' for structured logging
+  format: console       # or 'json' for structured logging
+```
+
+---
+
+## 🔗 CI/CD Backend Webhooks
+
+Instead of calling `/deploy` with CodeKit's internal schema, configure your CI/CD
+tool to send webhooks directly to CodeKit:
+
+| Backend | Webhook URL | Auth Method |
+|---------|------------|-------------|
+| **ArgoCD** | `POST /webhooks/argocd` | HMAC secret (`X-Argocd-Webhook-Secret`) |
+| **Forgejo** | `POST /webhooks/forgejo` | HMAC-SHA256 (`X-Forgejo-Webhook-Secret`) |
+| **Azure DevOps** | `POST /webhooks/azure_devops` | Custom header token |
+
+Each backend parses its native payload format and maps it to a `DeploymentEvent`
+automatically. For tools without a dedicated backend, use `POST /deploy` directly
+with a Bearer token.
+
+**Required Kubernetes labels** (ArgoCD):
+```yaml
+metadata:
+  labels:
+    dagster.io/code-location: "true"
+    dagster.io/location-name: "my-pipeline"
+    dagster.io/image-tag: "registry.example.com/my-pipeline:v1"
+```
+
+**Required Azure DevOps pipeline variables**:
+```
+dagster.location_name = my-pipeline
+dagster.image_tag = registry.example.com/my-pipeline:v1
 ```
 
 ---
@@ -296,6 +349,7 @@ Supported overrides: `service_account`, `namespace`, `image_pull_policy`, `ttl_s
 | `GET` | `/health/live` | No | Liveness probe |
 | `GET` | `/metrics` | No | Prometheus metrics |
 | `POST` | `/deploy` | Token | Push a metadata snapshot |
+| `POST` | `/webhooks/{backend}` | Per-backend | CI/CD webhook (argocd, forgejo, azure_devops) |
 | `DELETE` | `/locations/{name}` | Token | Delete location + snapshots |
 | `POST` | `/locations/{name}/rollback` | Token | Rollback to previous snapshot |
 
@@ -312,15 +366,18 @@ Supported overrides: `service_account`, `namespace`, `image_pull_policy`, `ttl_s
 * ✅ Rollback to previous snapshots
 * ✅ Thread-safe database pooling
 * ✅ Health checks and Prometheus metrics
-* ✅ ArgoCD webhook backend
+* ✅ ArgoCD, Forgejo, Azure DevOps webhook backends
+* ✅ Rate limiting (memory + Redis)
+* ✅ Real run cancellation
+* ✅ Sensor & schedule support via ephemeral workers
+* ✅ Docker Compose + K8s example manifests
 
 ### Next
 
 * 🔄 Helm chart
-* 🔄 Workspace ConfigMap manager (auto-sync with Dagster webserver)
-* 🔄 gRPC TLS support
 * 🔄 Multi-repository locations
-* 🔄 Run cancellation forwarding to K8s
+* 🔄 gRPC TLS support
+* 🔄 OIDC/OAuth backend support
 
 ---
 
