@@ -1,5 +1,6 @@
 import datetime
 import json
+import os
 from contextlib import contextmanager
 from urllib.parse import urlparse
 
@@ -90,18 +91,61 @@ def _create_pooled_db(url: str):
 
 
 def init_db(url: str):
-    """Initialize the database connection pool and create tables."""
+    """Initialize the database connection pool and run migrations."""
     try:
+        _check_sqlite_replica_safety(url)
+
         database = _create_pooled_db(url)
         db.initialize(database)
-
-        with db.connection_context():
-            db.create_tables([CodeLocation, Snapshot], safe=True)
-
+        run_migrations()
         logger.info("database_initialized", url=url)
     except Exception as e:
         logger.error("database_init_failed", error=str(e))
         raise
+
+
+def _check_sqlite_replica_safety(url: str):
+    if not url.startswith("sqlite"):
+        return
+
+    replica_count = int(os.environ.get("CODEKIT_REPLICA_COUNT", "0"))
+    if replica_count > 1:
+        raise RuntimeError(
+            "SQLite is not safe with multiple proxy replicas (CODEKIT_REPLICA_COUNT > 1). "
+            "Use the 'postgres' extra and set database.url to a Postgres connection string. "
+            "See docs/operations/sqlite-to-postgres.md for migration instructions."
+        )
+
+    if replica_count == 0:
+        logger.warning(
+            "sqlite_single_replica_warning",
+            msg="SQLite is configured. This is safe for single-replica/local use only. "
+                "Set CODEKIT_REPLICA_COUNT env var if running in Kubernetes.",
+        )
+
+
+def run_migrations():
+    """Apply pending schema migrations."""
+    from peewee_migrate import Router
+
+    migrations_dir = os.environ.get(
+        "CODEKIT_MIGRATIONS_DIR",
+        os.path.join(os.path.dirname(__file__), "..", "..", "migrations"),
+    )
+    migrations_dir = os.path.abspath(migrations_dir)
+
+    router = Router(db, migrate_dir=migrations_dir)
+
+    if not router.todo:
+        logger.info("no_pending_migrations")
+        return
+
+    auto = os.environ.get("CODEKIT_AUTO_CREATE_MIGRATION", "0") == "1"
+    if auto and not router.done:
+        router.create(auto=[CodeLocation, Snapshot])
+
+    migrations = router.run()
+    logger.info("migrations_applied", count=len(migrations), names=migrations)
 
 
 @contextmanager

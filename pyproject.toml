@@ -44,6 +44,7 @@ dependencies = [
     "starlette>=0.37.2,<0.39.0",
     "uvicorn[standard]>=0.40.0",
     "peewee>=3.19.0",
+    "peewee-migrate>=1.15.0",
     "click>=8.3.1",
     "pydantic>=2.12.5",
     "pyyaml>=6.0.3",

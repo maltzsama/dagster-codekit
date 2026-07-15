@@ -26,6 +26,9 @@ theme:
 
 nav:
   - Home: index.md
+  - Operations:
+      - Runbook: operations/runbook.md
+      - SQLite to Postgres: operations/sqlite-to-postgres.md
   - API Reference:
       - Package: api/dagster_codekit.md
       - Config: api/config.md

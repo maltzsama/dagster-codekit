@@ -262,6 +262,130 @@ logging:
     click.echo("Created config.yaml with default settings.")
 
 
+@cli.group()
+def db():
+    """Database management commands."""
+
+
+@db.command(name="migrate")
+@click.option(
+    "--config",
+    "-c",
+    default="config.yaml",
+    type=click.Path(exists=True),
+    help="Path to config.yaml file",
+)
+def migrate_cmd(config: str):
+    """Apply pending database migrations."""
+    configure_logging("INFO")
+    cfg = load_config(config)
+    from dagster_codekit.db.models import init_db
+
+    init_db(cfg.database.url)
+    click.echo(click.style("Migrations applied.", fg="green"))
+
+
+@db.command(name="export")
+@click.option(
+    "--config",
+    "-c",
+    default="config.yaml",
+    type=click.Path(exists=True),
+    help="Path to config.yaml file",
+)
+@click.option("--output", "-o", default="codekit_export.jsonl", help="Output file path")
+def export_cmd(config: str, output: str):
+    """Export all locations and snapshots to JSONL."""
+    import json
+
+    configure_logging("INFO")
+    cfg = load_config(config)
+    from dagster_codekit.db.models import CodeLocation, Snapshot, db_session, init_db
+
+    init_db(cfg.database.url)
+
+    with db_session():
+        locations = list(CodeLocation.select())
+        for loc in locations:
+            loc_data = {
+                "model": "CodeLocation",
+                "name": loc.name,
+                "description": loc.description,
+                "image": loc.image,
+                "namespace": loc.namespace,
+                "k8s_config": loc.k8s_config,
+                "created_at": loc.created_at.isoformat() if loc.created_at else None,
+                "updated_at": loc.updated_at.isoformat() if loc.updated_at else None,
+            }
+            with open(output, "a") as f:
+                f.write(json.dumps(loc_data) + "\n")
+
+            for snap in Snapshot.select().where(Snapshot.location == loc):
+                snap_data = {
+                    "model": "Snapshot",
+                    "location_name": loc.name,
+                    "image_tag": snap.image_tag,
+                    "content_json": snap.content_json,
+                    "commit_hash": snap.commit_hash,
+                    "created_at": snap.created_at.isoformat() if snap.created_at else None,
+                }
+                with open(output, "a") as f:
+                    f.write(json.dumps(snap_data) + "\n")
+
+    with open(output) as f:
+        count = sum(1 for _ in f)
+    click.echo(click.style(f"Exported {count} rows to {output}", fg="green"))
+
+
+@db.command(name="import")
+@click.option(
+    "--config",
+    "-c",
+    default="config.yaml",
+    type=click.Path(exists=True),
+    help="Path to config.yaml file",
+)
+@click.option("--input", "-i", default="codekit_export.jsonl", help="Input JSONL file")
+def import_cmd(config: str, input: str):
+    """Import locations and snapshots from JSONL."""
+    import json
+
+    configure_logging("INFO")
+    cfg = load_config(config)
+    from dagster_codekit.db.models import CodeLocation, Snapshot, db_session, init_db
+
+    init_db(cfg.database.url)
+
+    count = 0
+    locations_cache = {}
+
+    with open(input) as f:
+        for line in f:
+            data = json.loads(line)
+            with db_session():
+                if data["model"] == "CodeLocation":
+                    loc = CodeLocation.create(
+                        name=data["name"],
+                        description=data.get("description"),
+                        image=data["image"],
+                        namespace=data.get("namespace", "dagster"),
+                        k8s_config=data.get("k8s_config"),
+                    )
+                    locations_cache[data["name"]] = loc
+                elif data["model"] == "Snapshot":
+                    loc = locations_cache.get(data["location_name"])
+                    if loc:
+                        Snapshot.create(
+                            location=loc,
+                            image_tag=data["image_tag"],
+                            content_json=data["content_json"],
+                            commit_hash=data.get("commit_hash"),
+                        )
+            count += 1
+
+    click.echo(click.style(f"Imported {count} rows from {input}", fg="green"))
+
+
 def main():
     cli()
 
