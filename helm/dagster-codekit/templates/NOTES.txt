@@ -30,3 +30,9 @@ Set codekit.database.url to a Postgres DSN.
 SQLite is configured. This is safe for single-replica use only.
 For production with multiple replicas, use a Postgres database.
 {{- end }}
+
+{{- if and .Values.codekit.auth.enabled (not .Values.codekit.auth.existingSecret) }}
+Consider using `codekit.auth.existingSecret` to avoid storing tokens in
+values.yaml:
+  helm install ... --set codekit.auth.existingSecret=my-auth-secret
+{{- end }}

@@ -40,8 +40,13 @@ data:
     auth:
       enabled: true
       tokens:
+      {{- if .Values.codekit.auth.existingSecret }}
+      {{- /* existingSecret: render placeholder that load_config expands at runtime */}}
+        - ${CODEKIT_AUTH_TOKENS}
+      {{- else }}
       {{- range .Values.codekit.auth.tokens }}
         - {{ . | quote }}
+      {{- end }}
       {{- end }}
     {{- end }}
 

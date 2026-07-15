@@ -130,3 +130,49 @@ auth:
                 assert c.server.host == "0.0.0.0"  # default
             finally:
                 Path(f.name).unlink()
+
+    def test_expandvars_in_auth_tokens(self):
+        """Verify that ${VAR} placeholders in auth.tokens are resolved by load_config."""
+        import os
+
+        token_value = "s3cr3t-t0k3n-fr0m-3nv"
+        os.environ["CODEKIT_AUTH_TOKENS"] = token_value
+        try:
+            config_yaml = """
+auth:
+  enabled: true
+  tokens:
+    - ${CODEKIT_AUTH_TOKENS}
+"""
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+                f.write(config_yaml)
+                f.flush()
+
+            try:
+                c = load_config(f.name)
+                assert c.auth.enabled is True
+                assert len(c.auth.tokens) == 1
+                assert c.auth.tokens[0] == token_value
+            finally:
+                Path(f.name).unlink()
+        finally:
+            os.environ.pop("CODEKIT_AUTH_TOKENS", None)
+
+    def test_expandvars_without_env_var_fails_expansion(self):
+        """When ${VAR} references an unset var, expandvars leaves it as-is, which won't match."""
+        config_yaml = """
+auth:
+  enabled: true
+  tokens:
+    - ${UNSET_VAR_SHOULD_FAIL}
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
+            f.write(config_yaml)
+            f.flush()
+
+        try:
+            c = load_config(f.name)
+            # expandvars leaves unset vars as-is, so the token is the literal string
+            assert c.auth.tokens[0] == "${UNSET_VAR_SHOULD_FAIL}"
+        finally:
+            Path(f.name).unlink()

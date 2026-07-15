@@ -51,11 +51,18 @@ spec:
               value: {{ $replicaCount | quote }}
             {{- end }}
             {{- if and .Values.codekit.auth.enabled .Values.codekit.auth.existingSecret }}
+            {{- /* CODEKIT_AUTH_TOKENS: consumed by the server via config.yaml's expandvars placeholder */}}
+            - name: CODEKIT_AUTH_TOKENS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.codekit.auth.existingSecret }}
+                  key: {{ .Values.codekit.auth.existingSecretKey | default "token" }}
+            {{- /* CODEKIT_TOKEN: consumed by the CLI client (snapshot/delete/rollback --token) */}}
             - name: CODEKIT_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.codekit.auth.existingSecret }}
-                  key: CODEKIT_TOKEN
+                  key: {{ .Values.codekit.auth.existingSecretKey | default "token" }}
             {{- end }}
           ports:
             - name: http

@@ -94,7 +94,16 @@ codekit:
 
   auth:
     enabled: false
+    # existingSecret sources the server's auth token from a Kubernetes Secret.
+    # When set, the server reads the token at runtime via expandvars substitution
+    # (${CODEKIT_AUTH_TOKENS} in the rendered config.yaml). Do NOT also set
+    # `tokens` below — they are mutually exclusive (existingSecret wins).
+    # The CLI client (snapshot/delete/rollback) needs its own CODEKIT_TOKEN env
+    # var set separately, e.g. from the same Secret mapped into the CI pod.
     existingSecret: ""
+    # existingSecretKey is the key inside the Secret referenced by existingSecret.
+    existingSecretKey: "token"
+    # tokens is the plaintext token list (ignored when existingSecret is set).
     tokens: []
 
   rateLimit:
