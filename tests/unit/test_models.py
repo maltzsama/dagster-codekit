@@ -44,6 +44,41 @@ class TestDeploymentEvent:
             DeploymentEvent(location_name="", image_tag="img:v1")
 
 
+    def test_commit_hash_persisted(self):
+        """Regression: commit_hash must survive _register_deployment."""
+        import os
+        import tempfile
+
+        from dagster_codekit.api.app import _register_deployment
+        from dagster_codekit.db.models import Snapshot, db_session, init_db
+
+        db_path = tempfile.mktemp(suffix=".db")
+        db_url = f"sqlite:///{db_path}"
+
+        try:
+            init_db(db_url)
+
+            event = DeploymentEvent(
+                location_name="regression-test",
+                image_tag="img:v1",
+                snapshot_json='{"test": true}',
+                commit_hash="abc123def456",
+            )
+            _register_deployment(event)
+
+            with db_session():
+                snap = Snapshot.select().order_by(Snapshot.created_at.desc()).first()
+                assert snap is not None
+                assert snap.commit_hash == "abc123def456", (
+                    f"Expected commit_hash='abc123def456', got {snap.commit_hash!r}"
+                )
+        finally:
+            try:
+                os.unlink(db_path)
+            except OSError:
+                pass
+
+
 class TestValidationResult:
     def test_success(self):
         result = ValidationResult(success=True, message="All checks passed")

@@ -117,7 +117,7 @@ def deploy_snapshot(location_name: str, file_path: str, image_tag: str):
             location=location,
             image_tag=image_tag,
             content_json=payload.snapshot_json,
-            git_hash=payload.commit_hash,
+            commit_hash=payload.commit_hash,
         )
     return payload
 

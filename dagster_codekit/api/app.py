@@ -120,7 +120,7 @@ def _register_deployment(event: DeploymentEvent):
             location=location,
             image_tag=event.image_tag,
             content_json=event.snapshot_json,
-            git_hash=event.commit_hash,
+            commit_hash=event.commit_hash,
         )
 
     logger.info("snapshot_persisted", location=event.location_name)
