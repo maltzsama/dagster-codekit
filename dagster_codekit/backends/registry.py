@@ -5,7 +5,6 @@ Discovers and instantiates CI/CD backend plugins from configuration.
 
 from dagster_codekit.config import BackendsConfig
 from dagster_codekit.core.interfaces import BackendPlugin
-from dagster_codekit.core.exceptions import ConfigurationError
 
 
 class BackendRegistry:
