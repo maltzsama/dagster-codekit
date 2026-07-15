@@ -97,12 +97,21 @@ jobs:
         run: |
           kubectl create namespace dagster --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -f examples/kubernetes/manifests.yaml -n dagster
-          kubectl wait --for=condition=available deployment/codekit -n dagster --timeout=60s
+
+      - name: Wait for codekit
+        run: |
+          kubectl wait --for=condition=available deployment/codekit -n dagster --timeout=120s || (
+            echo "=== Deployment status ==="
+            kubectl describe deployment codekit -n dagster
+            echo "=== Pod logs ==="
+            kubectl logs -n dagster -l app.kubernetes.io/name=dagster-codekit --tail=50 || true
+            exit 1
+          )
 
       - name: Port forward and run e2e
         run: |
           kubectl port-forward -n dagster svc/codekit 4000:4000 &
-          sleep 3
+          sleep 5
           uv run pytest tests/e2e/test_k8s_launcher.py -v --tb=short
 
       - name: Collect logs on failure

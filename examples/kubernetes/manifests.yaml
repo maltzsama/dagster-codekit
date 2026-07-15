@@ -23,7 +23,8 @@ spec:
       containers:
         - name: codekit
           image: dagster-codekit:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Never
+          args: ["start", "--config", "/etc/codekit/config.yaml"]
           ports:
             - name: http
               containerPort: 8000
@@ -36,6 +37,8 @@ spec:
             - name: config
               mountPath: /etc/codekit
               readOnly: true
+            - name: data
+              mountPath: /opt/dagster/codekit_data
           resources:
             requests:
               cpu: 250m
@@ -59,6 +62,8 @@ spec:
         - name: config
           configMap:
             name: codekit-config
+        - name: data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
@@ -92,7 +97,7 @@ data:
       grpc_port: 4000
       workers: 4
     database:
-      url: "postgresql://${DAGSTER_POSTGRES_USER}:${DAGSTER_POSTGRES_PASSWORD}@${DAGSTER_POSTGRES_HOSTNAME}:5432/${DAGSTER_POSTGRES_DB}"
+      url: "sqlite:////opt/dagster/codekit_data/codekit.db"
     launcher:
       enabled: true
       mode: k8s
